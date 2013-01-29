@@ -1,14 +1,15 @@
 module Pudding where
 
 import Control.Applicative ((<|>),(<$>))
+import Control.Monad.Trans.Resource (MonadThrow)
 import Data.Attoparsec.ByteString (Parser)
 import Data.Attoparsec.ByteString as A (choice, string, takeWhile)
 import Data.Attoparsec.Char8 as AC (double, isSpace_w8)
-import Data.ByteString.Char8 as BC (ByteString)
+import Data.ByteString.Char8 as BC (ByteString, pack)
 import Data.Conduit as C (GLConduit, GLInfConduit, (=$=), mapOutput)
-import Data.Functor ((<$))
 import Data.Conduit.Attoparsec (conduitParser)
-import Control.Monad.Trans.Resource
+import Data.Conduit.List as CL (map)
+import Data.Functor ((<$))
 
 data PToken = PWord ByteString
             | PNumber Double
@@ -25,5 +26,6 @@ parser = PNumber <$> double
 conduitPuddingParser :: MonadThrow m => GLInfConduit ByteString m PToken
 conduitPuddingParser = mapOutput snd $ conduitParser parser
 
-conduitPuddingEvaluator :: GLConduit PToken m ByteString
-conduitPuddingEvaluator = undefined
+-- temporary implementation
+conduitPuddingEvaluator :: Monad m => GLInfConduit PToken m ByteString
+conduitPuddingEvaluator = CL.map $ pack . show
