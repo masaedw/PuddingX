@@ -7,9 +7,10 @@ import Data.Attoparsec.ByteString (Parser, try, skip, many')
 import Data.Attoparsec.ByteString as A
 import Data.Attoparsec.Char8 as AC hiding (space)
 import Data.Attoparsec.Combinator (sepBy', manyTill)
+import Data.ByteString (empty)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
-import Data.Conduit as C (GLConduit, GLInfConduit, (=$=), mapOutput)
-import Data.Conduit.Attoparsec (conduitParser)
+import Data.Conduit as C (Conduit, GLInfConduit, (=$=), mapOutput)
+import Data.Conduit.Util (conduitState, ConduitStateResult(..))
 import Data.Conduit.List as CL (map)
 import Data.Functor ((<$))
 import GHC.Word (Word8)
@@ -83,10 +84,16 @@ delimiter :: Parser ()
 delimiter = A.skipWhile space
 
 pLine :: Parser [PToken]
-pLine = delimiter *> pToken `sepBy` delimiter <* delimiter <* (endOfLine <|> endOfInput)
+pLine = delimiter >> pToken `sepBy` delimiter <* delimiter <* (endOfLine <|> endOfInput)
 
-conduitPuddingParser :: MonadThrow m => GLInfConduit ByteString m [PToken]
-conduitPuddingParser = mapOutput snd $ conduitParser pLine
+conduitPuddingParser :: MonadThrow m => Conduit ByteString m [PToken]
+conduitPuddingParser = conduitState "" push close
+  where
+    push :: ByteString -> ByteString -> m (ConduitStateResult ByteString ByteString [PToken])
+    push = undefined
+
+    close :: ByteString -> m [[PToken]]
+    close = undefined
 
 -- temporary implementation
 conduitPuddingEvaluator :: Monad m => GLInfConduit [PToken] m ByteString
