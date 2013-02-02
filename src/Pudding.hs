@@ -3,13 +3,11 @@ module Pudding where
 
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
 import Control.Monad.Trans.Resource (MonadThrow)
-import Data.Attoparsec.ByteString (Parser, try, skip, many')
+import Data.Attoparsec.ByteString (Parser, many')
 import Data.Attoparsec.ByteString as A
 import Data.Attoparsec.Char8 as AC hiding (space)
-import Data.Attoparsec.Combinator (sepBy', manyTill)
-import Data.ByteString (empty)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
-import Data.Conduit as C (Conduit, GLInfConduit, (=$=), mapOutput)
+import Data.Conduit as C (Conduit, GLInfConduit)
 import Data.Conduit.Util (conduitState, ConduitStateResult(..))
 import Data.Conduit.List as CL (map)
 import Data.Functor ((<$))
@@ -65,7 +63,7 @@ pChar = AC.satisfy $ AC.notInClass "\"\\"
 -- >>> parseOnly pEscape $ pack "\\t"
 -- Right '\t'
 pEscape :: Parser Char
-pEscape = char '\\' >> (unEscape <$> (AC.satisfy (`elem` "\"\\0abfnrt")))
+pEscape = char '\\' *> (unEscape <$> (AC.satisfy (`elem` "\"\\0abfnrt")))
   where
     unEscape '"' = '"'
     unEscape '\\' = '\\'
