@@ -4,7 +4,7 @@ module Pudding where
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
 import Control.Monad.Trans.Resource (MonadThrow)
 import Data.Attoparsec.ByteString (Parser, many')
-import Data.Attoparsec.ByteString as A
+import qualified Data.Attoparsec.ByteString as A
 import Data.Attoparsec.Char8 as AC hiding (space)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
 import Data.Conduit as C (Conduit, GLInfConduit)
@@ -75,23 +75,23 @@ pEscape = char '\\' *> (unEscape <$> (AC.satisfy (`elem` "\"\\0abfnrt")))
     unEscape 'r' = '\r'
     unEscape 't' = '\t'
 
-space :: Word8 -> Bool
-space w = w == 32 || w == 9
-
-delimiter :: Parser ()
-delimiter = A.skipWhile space
-
-pLine :: Parser [PToken]
-pLine = delimiter >> pToken `sepBy` delimiter <* delimiter <* (endOfLine <|> endOfInput)
-
 conduitPuddingParser :: MonadThrow m => Conduit ByteString m [PToken]
 conduitPuddingParser = conduitState "" push close
   where
-    push :: ByteString -> ByteString -> m (ConduitStateResult ByteString ByteString [PToken])
-    push = undefined
+    push :: MonadThrow m => ByteString -> ByteString -> m (ConduitStateResult ByteString ByteString [PToken])
+    push rest "" = case parseOnly parser rest of
+      Right r -> return $ StateFinished Nothing [r]
+      Left _ -> return $ StateFinished Nothing []
+    push rest input = case parseOnly parser (append rest input) of
+      Right r -> return $ StateProducing "" [r]
+      Left _ -> return $ StateProducing "" []
 
-    close :: ByteString -> m [[PToken]]
-    close = undefined
+    parser = (skipSpace >> pToken `sepBy` skipSpace)
+
+    close :: MonadThrow m => ByteString -> m [[PToken]]
+    close rest = case parseOnly parser rest of
+      Right r -> return [r]
+      Left _ -> return []
 
 -- temporary implementation
 conduitPuddingEvaluator :: Monad m => GLInfConduit [PToken] m ByteString
