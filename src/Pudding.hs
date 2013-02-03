@@ -8,10 +8,12 @@ import qualified Data.Attoparsec.ByteString as A
 import Data.Attoparsec.Char8 as AC hiding (space)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
 import Data.Conduit as C (Conduit, GLInfConduit)
-import Data.Conduit.Util (conduitState, ConduitStateResult(..))
 import Data.Conduit.List as CL (map)
+import Data.Conduit.Util (conduitState, ConduitStateResult(..))
 import Data.Functor ((<$))
+import Data.Map as Map (Map, fromList)
 import GHC.Word (Word8)
+import Prelude hiding (div)
 
 data PToken = PWord ByteString
             | PNumber Double
@@ -93,6 +95,55 @@ conduitPuddingParser = conduitState "" push close
       Right r -> return [r]
       Left _ -> return []
 
--- temporary implementation
-conduitPuddingEvaluator :: Monad m => GLInfConduit [PToken] m ByteString
-conduitPuddingEvaluator = CL.map $ (`BC.append` "\n") . pack . show
+data PData = PDNumber Double
+           | PDBool Bool
+           | PDString ByteString
+           deriving (Eq, Show)
+
+type PProc = [PData] -> Either ByteString (ByteString, [PData])
+
+data Environment = Environment
+                   { stack :: [PData]
+                   , wordMap :: Map ByteString PProc
+                   }
+
+showTop :: PProc
+showTop (s:xs) = Right ((pack $ show s), xs)
+showTop s = Left "empty stack"
+
+showStack :: PProc
+showStack s = Right ((pack $ show s), s)
+
+plus :: PProc
+plus ((PDNumber a):(PDNumber b):xs) = Right ("", (PDNumber $ b+a):xs)
+plus ((PDString a):(PDString b):xs) = Right ("", (PDString $ append b a):xs)
+plus _ = Left "+ needs 2 operands"
+
+minus :: PProc
+minus ((PDNumber a):(PDNumber b):xs) = Right ("", (PDNumber $ b-a):xs)
+minus _ = Left "- needs 2 operands"
+
+mul :: PProc
+mul ((PDNumber a):(PDNumber b):xs) = Right ("", (PDNumber $ b*a):xs)
+mul _ = Left "* needs 2 operands"
+
+div :: PProc
+div ((PDNumber a):(PDNumber b):xs) = Right ("", (PDNumber $ b/a):xs)
+div _ = Left "/ needs 2 operands"
+
+initEnv :: Environment
+initEnv = Environment { stack = []
+                      , wordMap = fromList [(".", showTop)
+                                           ,(".s", showStack)
+                                           ,("+", plus)
+                                           ,("-", minus)
+                                           ,("*", mul)
+                                           ,("/", div)
+                                           ]
+                      }
+
+conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
+conduitPuddingEvaluator = conduitState initEnv push close
+  where
+    push = undefined
+    close = undefined

@@ -11,5 +11,6 @@ main :: IO ()
 main = runResourceT
        $ sourceHandle stdin
        $= conduitPuddingParser
+       $= CL.concatMap id
        $= conduitPuddingEvaluator
        $$ sinkHandle stdout
