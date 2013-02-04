@@ -8,9 +8,9 @@ import qualified Data.Attoparsec.ByteString as A
 import Data.Attoparsec.Char8 as AC hiding (space)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
 import Data.Conduit as C (Conduit, GLInfConduit, (=$=))
-import Data.Conduit.List as CL (map, concatMap, concatMapAccum)
+import qualified Data.Conduit.List as CL (map, concatMap, concatMapAccum)
 import Data.Functor ((<$))
-import Data.Map as Map (Map, fromList)
+import Data.Map as Map (Map, fromList, lookup)
 import GHC.Word (Word8)
 import Prelude hiding (div)
 
@@ -77,7 +77,7 @@ pEscape = char '\\' *> (unEscape <$> (AC.satisfy (`elem` "\"\\0abfnrt")))
     unEscape 't' = '\t'
 
 conduitPuddingParser :: MonadThrow m => Conduit ByteString m PToken
-conduitPuddingParser = concatMapAccum step ""
+conduitPuddingParser = CL.concatMapAccum step ""
   where
     step :: ByteString -> ByteString -> (ByteString, [PToken])
     step input rest = case parseFeed parser (append rest input) of
@@ -95,36 +95,41 @@ data PData = PDNumber Double
            | PDString ByteString
            deriving (Eq, Show)
 
-type PProc = [PData] -> Either ByteString (ByteString, [PData])
+type PProc = [PData] -> Either ByteString ([ByteString], [PData])
 
+-- なんかこれモナドになりそうな気がしてきた
 data Environment = Environment
                    { stack :: [PData]
                    , wordMap :: Map ByteString PProc
                    }
 
 showTop :: PProc
-showTop (s:xs) = Right ((pack $ show s), xs)
+showTop (s:xs) = Right ([(pack $ show s)], xs)
 showTop s = Left "empty stack"
 
 showStack :: PProc
-showStack s = Right ((pack $ show s), s)
+showStack s = Right ([(pack $ show s)], s)
 
 plus :: PProc
-plus ((PDNumber a):(PDNumber b):xs) = Right ("", (PDNumber $ b+a):xs)
-plus ((PDString a):(PDString b):xs) = Right ("", (PDString $ append b a):xs)
+plus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b+a):xs)
+plus ((PDString a):(PDString b):xs) = Right ([], (PDString $ append b a):xs)
 plus _ = Left "+ needs 2 operands"
 
 minus :: PProc
-minus ((PDNumber a):(PDNumber b):xs) = Right ("", (PDNumber $ b-a):xs)
+minus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b-a):xs)
 minus _ = Left "- needs 2 operands"
 
 mul :: PProc
-mul ((PDNumber a):(PDNumber b):xs) = Right ("", (PDNumber $ b*a):xs)
+mul ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b*a):xs)
 mul _ = Left "* needs 2 operands"
 
 div :: PProc
-div ((PDNumber a):(PDNumber b):xs) = Right ("", (PDNumber $ b/a):xs)
+div ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b/a):xs)
 div _ = Left "/ needs 2 operands"
+
+dup :: PProc
+dup (x:xs) = Right ([], x:x:xs)
+dup _ = Left "dup needs 1 operands"
 
 initEnv :: Environment
 initEnv = Environment { stack = []
@@ -134,11 +139,35 @@ initEnv = Environment { stack = []
                                            ,("-", minus)
                                            ,("*", mul)
                                            ,("/", div)
+                                           ,("dup", dup)
                                            ]
                       }
 
+push :: Environment -> PData -> Environment
+push env@(Environment s _) d = env { stack = d:s }
+
+data PContainer = PData PData
+                | PProc ByteString (Maybe PProc)
+
+fromToken :: PToken -> Environment -> PContainer
+fromToken (PNumber x) _ = PData $ PDNumber x
+fromToken (PBool x) _ = PData $ PDBool x
+fromToken (PString x) _ = PData $ PDString x
+fromToken (PWord x) (Environment _ m) = PProc x $ Map.lookup x m
+
 conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
-conduitPuddingEvaluator = CL.concatMapAccum step initEnv
+conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\n")
   where
     step :: PToken -> Environment -> (Environment, [ByteString])
-    step t e = (e, [("> " `append`) . (`append` "\n") . pack $ show t])
+    step t e = eval (fromToken t e) e
+
+    eval :: PContainer -> Environment -> (Environment, [ByteString])
+    eval (PData x) env = (push env x, [])
+    eval (PProc _ (Just p)) env@(Environment s m) = apply p env
+    eval (PProc word Nothing) env = (env, [append "undefined word " word])
+
+    apply :: PProc -> Environment -> (Environment, [ByteString])
+    apply p env@(Environment s m) = either fail success $ p s
+      where
+        fail f = (env, [f])
+        success (msg, ns) = (Environment ns m, map (append "> ") msg)
