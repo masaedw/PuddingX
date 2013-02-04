@@ -18,10 +18,11 @@ executable PuddingX
   main-is:             Main.hs
   hs-source-dirs:      src
   other-modules:       Pudding
-  build-depends:       base ==4.5.*,
-                       conduit,
-                       rts,
-                       attoparsec,
-                       attoparsec-conduit,
-                       bytestring,
-                       resourcet
+  build-depends:       base ==4.5.*
+                     , attoparsec
+                     , attoparsec-conduit
+                     , bytestring
+                     , conduit
+                     , containers
+                     , resourcet
+                     , rts
