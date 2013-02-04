@@ -7,9 +7,8 @@ import Data.Attoparsec.ByteString (Parser, many')
 import qualified Data.Attoparsec.ByteString as A
 import Data.Attoparsec.Char8 as AC hiding (space)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
-import Data.Conduit as C (Conduit, GLInfConduit)
-import Data.Conduit.List as CL (map)
-import Data.Conduit.Util (conduitState, ConduitStateResult(..))
+import Data.Conduit as C (Conduit, GLInfConduit, (=$=))
+import Data.Conduit.List as CL (map, concatMap, concatMapAccum)
 import Data.Functor ((<$))
 import Data.Map as Map (Map, fromList)
 import GHC.Word (Word8)
@@ -77,23 +76,19 @@ pEscape = char '\\' *> (unEscape <$> (AC.satisfy (`elem` "\"\\0abfnrt")))
     unEscape 'r' = '\r'
     unEscape 't' = '\t'
 
-conduitPuddingParser :: MonadThrow m => Conduit ByteString m [PToken]
-conduitPuddingParser = conduitState "" push close
+conduitPuddingParser :: MonadThrow m => Conduit ByteString m PToken
+conduitPuddingParser = concatMapAccum step ""
   where
-    push :: MonadThrow m => ByteString -> ByteString -> m (ConduitStateResult ByteString ByteString [PToken])
-    push rest "" = case parseOnly parser rest of
-      Right r -> return $ StateFinished Nothing [r]
-      Left _ -> return $ StateFinished Nothing []
-    push rest input = case parseOnly parser (append rest input) of
-      Right r -> return $ StateProducing "" [r]
-      Left _ -> return $ StateProducing "" []
+    step :: ByteString -> ByteString -> (ByteString, [PToken])
+    step input rest = case parseFeed parser (append rest input) of
+      Done t r -> (t, r)
+      Fail _ _ _ -> ("", [])
 
+    parser :: Parser [PToken]
     parser = (skipSpace >> pToken `sepBy` skipSpace)
 
-    close :: MonadThrow m => ByteString -> m [[PToken]]
-    close rest = case parseOnly parser rest of
-      Right r -> return [r]
-      Left _ -> return []
+    parseFeed :: Parser [PToken] -> ByteString -> Result [PToken]
+    parseFeed p i = feed (parse p i) ""
 
 data PData = PDNumber Double
            | PDBool Bool
@@ -143,7 +138,7 @@ initEnv = Environment { stack = []
                       }
 
 conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
-conduitPuddingEvaluator = conduitState initEnv push close
+conduitPuddingEvaluator = CL.concatMapAccum step initEnv
   where
-    push = undefined
-    close = undefined
+    step :: PToken -> Environment -> (Environment, [ByteString])
+    step t e = (e, [("> " `append`) . (`append` "\n") . pack $ show t])
