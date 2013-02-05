@@ -2,6 +2,7 @@
 module Pudding where
 
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
+import Control.Monad.State (State, get, put, runState)
 import Control.Monad.Trans.Resource (MonadThrow)
 import Data.Attoparsec.ByteString (Parser, many')
 import qualified Data.Attoparsec.ByteString as A
@@ -11,6 +12,7 @@ import Data.Conduit as C (Conduit, GLInfConduit, (=$=))
 import qualified Data.Conduit.List as CL (map, concatMap, concatMapAccum)
 import Data.Functor ((<$))
 import Data.Map as Map (Map, fromList, lookup)
+import Data.Tuple (swap)
 import GHC.Word (Word8)
 import Prelude hiding (div)
 
@@ -97,7 +99,6 @@ data PData = PDNumber Double
 
 type PProc = [PData] -> Either ByteString ([ByteString], [PData])
 
--- なんかこれモナドになりそうな気がしてきた
 data Environment = Environment
                    { stack :: [PData]
                    , wordMap :: Map ByteString PProc
@@ -143,8 +144,12 @@ initEnv = Environment { stack = []
                                            ]
                       }
 
-push :: Environment -> PData -> Environment
-push env@(Environment s _) d = env { stack = d:s }
+type Env = State Environment
+
+push :: PData -> Env ()
+push d = do
+  env@(Environment s _) <- get
+  put env { stack = d:s }
 
 data PContainer = PData PData
                 | PProc ByteString (Maybe PProc)
@@ -159,15 +164,15 @@ conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
 conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\n")
   where
     step :: PToken -> Environment -> (Environment, [ByteString])
-    step t e = eval (fromToken t e) e
+    step t e = swap $ runState (eval (fromToken t e)) e
 
-    eval :: PContainer -> Environment -> (Environment, [ByteString])
-    eval (PData x) env = (push env x, [])
-    eval (PProc _ (Just p)) env@(Environment s m) = apply p env
-    eval (PProc word Nothing) env = (env, [append "undefined word " word])
+    eval :: PContainer -> Env [ByteString]
+    eval (PData x) = push x >> return []
+    eval (PProc _ (Just p)) = apply p
+    eval (PProc word Nothing) = return [append "undefined word " word]
 
-    apply :: PProc -> Environment -> (Environment, [ByteString])
-    apply p env@(Environment s m) = either fail success $ p s
-      where
-        fail f = (env, [f])
-        success (msg, ns) = (Environment ns m, map (append "> ") msg)
+    apply :: PProc -> Env [ByteString]
+    apply p = do
+      env@(Environment s m) <- get
+      let success (msg, ns) = map (append "> ") msg <$ put (Environment ns m)
+      either (return . return) success $ p s
