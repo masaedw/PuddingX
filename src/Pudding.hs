@@ -154,17 +154,20 @@ push d = do
 data PContainer = PData PData
                 | PProc ByteString (Maybe PProc)
 
-fromToken :: PToken -> Environment -> PContainer
-fromToken (PNumber x) _ = PData $ PDNumber x
-fromToken (PBool x) _ = PData $ PDBool x
-fromToken (PString x) _ = PData $ PDString x
-fromToken (PWord x) (Environment _ m) = PProc x $ Map.lookup x m
+lookupWord :: ByteString -> Env (Maybe PProc)
+lookupWord x = get >>= return . Map.lookup x . wordMap
+
+fromToken :: PToken -> Env PContainer
+fromToken (PNumber x) = return . PData $ PDNumber x
+fromToken (PBool x) = return . PData $ PDBool x
+fromToken (PString x) = return . PData $ PDString x
+fromToken (PWord x) = PProc x <$> lookupWord x
 
 conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
 conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\n")
   where
     step :: PToken -> Environment -> (Environment, [ByteString])
-    step t e = swap $ runState (eval (fromToken t e)) e
+    step t e = swap $ runState (fromToken t >>= eval) e
 
     eval :: PContainer -> Env [ByteString]
     eval (PData x) = push x >> return []
