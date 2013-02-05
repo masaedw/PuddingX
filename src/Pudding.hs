@@ -3,6 +3,7 @@ module Pudding where
 
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
 import Control.Monad.State (State, get, put, runState)
+import Control.Monad.Trans.Either (EitherT, left, right, runEitherT)
 import Control.Monad.Trans.Resource (MonadThrow)
 import Data.Attoparsec.ByteString (Parser, many')
 import qualified Data.Attoparsec.ByteString as A
@@ -97,7 +98,8 @@ data PData = PDNumber Double
            | PDString ByteString
            deriving (Eq, Show)
 
-type PProc = [PData] -> Either ByteString ([ByteString], [PData])
+--type PProc = [PData] -> Either ByteString ([ByteString], [PData])
+type PProc = EitherT ByteString Env ByteString
 
 data Environment = Environment
                    { stack :: [PData]
@@ -105,32 +107,36 @@ data Environment = Environment
                    }
 
 showTop :: PProc
-showTop (s:xs) = Right ([(pack $ show s)], xs)
-showTop s = Left "empty stack"
+showTop = pack . show <$> pop
 
 showStack :: PProc
-showStack s = Right ([(pack $ show s)], s)
+showStack = get >>= return . pack . show . stack
 
 plus :: PProc
-plus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b+a):xs)
-plus ((PDString a):(PDString b):xs) = Right ([], (PDString $ append b a):xs)
-plus _ = Left "+ needs 2 operands"
+--plus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b+a):xs)
+--plus ((PDString a):(PDString b):xs) = Right ([], (PDString $ append b a):xs)
+--plus _ = Left "+ needs 2 operand"
+plus = undefined
 
 minus :: PProc
-minus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b-a):xs)
-minus _ = Left "- needs 2 operands"
+--minus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b-a):xs)
+--minus _ = Left "- needs 2 operands"
+minus = undefined
 
 mul :: PProc
-mul ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b*a):xs)
-mul _ = Left "* needs 2 operands"
+--mul ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b*a):xs)
+--mul _ = Left "* needs 2 operands"
+mul = undefined
 
 div :: PProc
-div ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b/a):xs)
-div _ = Left "/ needs 2 operands"
+--div ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b/a):xs)
+--div _ = Left "/ needs 2 operands"
+div = undefined
 
 dup :: PProc
-dup (x:xs) = Right ([], x:x:xs)
-dup _ = Left "dup needs 1 operands"
+--dup (x:xs) = Right ([], x:x:xs)
+--dup _ = Left "dup needs 1 operands"
+dup = undefined
 
 initEnv :: Environment
 initEnv = Environment { stack = []
@@ -150,6 +156,13 @@ push :: PData -> Env ()
 push d = do
   env@(Environment s _) <- get
   put env { stack = d:s }
+
+pop :: EitherT ByteString Env PData
+pop = do
+  env@(Environment s _) <- get
+  case s of
+    (a:as) -> put env { stack = as } >> right a
+    _ -> left "empty stack"
 
 data PContainer = PData PData
                 | PProc ByteString (Maybe PProc)
@@ -175,7 +188,10 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
     eval (PProc word Nothing) = return [append "undefined word " word]
 
     apply :: PProc -> Env [ByteString]
-    apply p = do
-      env@(Environment s m) <- get
-      let success (msg, ns) = map (append "> ") msg <$ put (Environment ns m)
-      either (return . return) success $ p s
+    apply p = runEitherT p >>= return . either fail success
+      where
+        fail :: ByteString -> [ByteString]
+        fail x = [append "*** " x]
+
+        success :: ByteString -> [ByteString]
+        success x = [append "> " x]
