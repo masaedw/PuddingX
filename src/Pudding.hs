@@ -123,12 +123,15 @@ plus :: PProc
 plus = transaction $ do
   a <- pop
   b <- pop
-  plus' a b
+  push' $ plus' a b
   return []
   where
-    plus' :: PData -> PData -> EnvWithError ()
-    plus' (PDNumber a) (PDNumber b) = lift . push . PDNumber $ a + b
+    plus' :: PData -> PData -> Either String PData
+    plus' (PDNumber a) (PDNumber b) = return . PDNumber $ a + b
     plus' _ _ = throwError "+ needs 2 Numbers"
+
+    push' :: Either String PData -> EnvWithError ()
+    push' = either throwError $ lift . push
 
 minus :: PProc
 --minus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b-a):xs)
