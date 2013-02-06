@@ -5,7 +5,6 @@ module Pudding where
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
 import Control.Monad.Error (ErrorT, runErrorT, catchError, throwError)
 import Control.Monad.State (State, get, put, runState)
-import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Resource (MonadThrow)
 import Data.Attoparsec.ByteString (Parser, Result, IResult(..), choice, many')
 import qualified Data.Attoparsec.ByteString as A (takeWhile1)
@@ -123,8 +122,7 @@ plus :: PProc
 plus = transaction $ do
   a <- pop
   b <- pop
-  push' $ plus' a b
-  return []
+  either throwError (\x -> push x >> return []) $ plus' a b
   where
     plus' :: PData -> PData -> Either String PData
     plus' (PDNumber a) (PDNumber b) = return . PDNumber $ a + b
@@ -162,8 +160,7 @@ initEnv = Environment { stack = []
                                            ]
                       }
 
-type Env = State Environment
-type EnvWithError = ErrorT String Env
+type EnvWithError = ErrorT String (State Environment)
 
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
@@ -172,13 +169,10 @@ transaction m = do
   origEnv <- get
   catchError m $ (put origEnv >>) . throwError
 
-push :: PData -> Env ()
+push :: PData -> EnvWithError ()
 push d = do
   env@(Environment s _) <- get
   put env { stack = d:s }
-
-push' :: Either String PData -> EnvWithError ()
-push' = either throwError $ lift . push
 
 pop :: EnvWithError PData
 pop = do
@@ -188,12 +182,12 @@ pop = do
     _ -> throwError "empty stack"
 
 data PContainer = PData PData
-                | PProc ByteString (Maybe PProc)
+                | PProc ByteString PProc
 
-lookupWord :: ByteString -> Env (Maybe PProc)
-lookupWord x = Map.lookup x . wordMap <$> get
+lookupWord :: ByteString -> EnvWithError PProc
+lookupWord x =  maybe (throwError "undefined word") return . Map.lookup x . wordMap =<< get
 
-fromToken :: PToken -> Env PContainer
+fromToken :: PToken -> EnvWithError PContainer
 fromToken (PNumber x) = return . PData $ PDNumber x
 fromToken (PBool x) = return . PData $ PDBool x
 fromToken (PString x) = return . PData $ PDString x
@@ -207,18 +201,11 @@ conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
 conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\n")
   where
     step :: PToken -> Environment -> (Environment, [ByteString])
-    step t e = swap $ runState (fromToken t >>= eval) e
-
-    eval :: PContainer -> Env [ByteString]
-    eval (PData x) = push x >> return []
-    eval (PProc _ (Just p)) = apply p
-    eval (PProc word Nothing) = return [append "undefined word " word]
-
-    apply :: PProc -> Env [ByteString]
-    apply p = either errmsg success <$> runErrorT p
+    step t e = swap $ runState s e
       where
-        errmsg :: String -> [ByteString]
-        errmsg x = ["*** " `append` pack x]
+        s :: State Environment [ByteString]
+        s = either ((:[]) . pack . ("*** "++)) id <$> runErrorT (fromToken t >>= eval)
 
-        success :: [ByteString] -> [ByteString]
-        success = map (append "> ")
+    eval :: PContainer -> EnvWithError [ByteString]
+    eval (PData x) = push x >> return []
+    eval (PProc _ p) = map (append "> ") <$> p
