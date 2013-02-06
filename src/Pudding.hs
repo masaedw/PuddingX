@@ -130,9 +130,6 @@ plus = transaction $ do
     plus' (PDNumber a) (PDNumber b) = return . PDNumber $ a + b
     plus' _ _ = throwError "+ needs 2 Numbers"
 
-    push' :: Either String PData -> EnvWithError ()
-    push' = either throwError $ lift . push
-
 minus :: PProc
 --minus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b-a):xs)
 --minus _ = Left "- needs 2 operands"
@@ -179,6 +176,9 @@ push :: PData -> Env ()
 push d = do
   env@(Environment s _) <- get
   put env { stack = d:s }
+
+push' :: Either String PData -> EnvWithError ()
+push' = either throwError $ lift . push
 
 pop :: EnvWithError PData
 pop = do
