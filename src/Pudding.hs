@@ -79,6 +79,10 @@ pEscape = char '\\' *> (unEscape <$> (AC.satisfy (`elem` "\"\\0abfnrt")))
     unEscape 'r' = '\r'
     unEscape 't' = '\t'
 
+-- |
+-- >>> :m +Data.Conduit Data.Conduit.List
+-- >>> runResourceT $ sourceList [pack "aaa 1", pack "2 3"] $= conduitPuddingParser $$ consume
+-- [PWord "aaa",PNumber 1.0,PNumber 2.0,PNumber 3.0]
 conduitPuddingParser :: MonadThrow m => Conduit ByteString m PToken
 conduitPuddingParser = CL.concatMapAccum step ""
   where
@@ -190,6 +194,10 @@ fromToken (PBool x) = return . PData $ PDBool x
 fromToken (PString x) = return . PData $ PDString x
 fromToken (PWord x) = PProc x <$> lookupWord x
 
+-- |
+-- >>> :m +Data.Conduit Data.Conduit.List
+-- >>> runResourceT $ sourceList [PNumber 1.0,PNumber 2.0,PNumber 3.0, PWord $ pack ".s", PWord $ pack "+", PWord $ pack "+", PWord $ pack "."] $= conduitPuddingEvaluator $$ consume
+-- ["> [PDNumber 3.0,PDNumber 2.0,PDNumber 1.0]\n","> PDNumber 6.0\n"]
 conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
 conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\n")
   where
