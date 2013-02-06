@@ -105,7 +105,7 @@ data PData = PDNumber Double
            deriving (Eq, Show)
 
 --type PProc = [PData] -> Either ByteString ([ByteString], [PData])
-type PProc = EnvWithError [ByteString]
+type PProc = Env [ByteString]
 
 data Environment = Environment
                    { stack :: [PData]
@@ -160,21 +160,21 @@ initEnv = Environment { stack = []
                                            ]
                       }
 
-type EnvWithError = ErrorT String (State Environment)
+type Env = ErrorT String (State Environment)
 
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
-transaction :: EnvWithError a -> EnvWithError a
+transaction :: Env a -> Env a
 transaction m = do
   origEnv <- get
   catchError m $ (put origEnv >>) . throwError
 
-push :: PData -> EnvWithError ()
+push :: PData -> Env ()
 push d = do
   env@(Environment s _) <- get
   put env { stack = d:s }
 
-pop :: EnvWithError PData
+pop :: Env PData
 pop = do
   env@(Environment s _) <- get
   case s of
@@ -184,10 +184,10 @@ pop = do
 data PContainer = PData PData
                 | PProc ByteString PProc
 
-lookupWord :: ByteString -> EnvWithError PProc
+lookupWord :: ByteString -> Env PProc
 lookupWord x =  maybe (throwError "undefined word") return . Map.lookup x . wordMap =<< get
 
-fromToken :: PToken -> EnvWithError PContainer
+fromToken :: PToken -> Env PContainer
 fromToken (PNumber x) = return . PData $ PDNumber x
 fromToken (PBool x) = return . PData $ PDBool x
 fromToken (PString x) = return . PData $ PDString x
@@ -206,6 +206,6 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
         s :: State Environment [ByteString]
         s = either ((:[]) . pack . ("*** "++)) id <$> runErrorT (fromToken t >>= eval)
 
-    eval :: PContainer -> EnvWithError [ByteString]
+    eval :: PContainer -> Env [ByteString]
     eval (PData x) = push x >> return []
     eval (PProc _ p) = map (append "> ") <$> p
