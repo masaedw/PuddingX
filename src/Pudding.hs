@@ -1,4 +1,4 @@
-{-# OPTIONS -Wall -O2 #-}
+{-# OPTIONS -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Pudding where
 
