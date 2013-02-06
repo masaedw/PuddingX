@@ -24,7 +24,5 @@ executable PuddingX
                      , bytestring
                      , conduit
                      , containers
-                     , either
                      , mtl
                      , resourcet
-                     , rts
