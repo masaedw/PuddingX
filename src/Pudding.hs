@@ -99,7 +99,7 @@ data PData = PDNumber Double
            deriving (Eq, Show)
 
 --type PProc = [PData] -> Either ByteString ([ByteString], [PData])
-type PProc = EnvWithError ByteString
+type PProc = EnvWithError [ByteString]
 
 data Environment = Environment
                    { stack :: [PData]
@@ -107,10 +107,10 @@ data Environment = Environment
                    }
 
 showTop :: PProc
-showTop = pack . show <$> pop
+showTop = (:[]) . pack . show <$> pop
 
 showStack :: PProc
-showStack = get >>= return . pack . show . stack
+showStack = get >>= return . (:[]) . pack . show . stack
 
 plus :: PProc
 --plus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b+a):xs)
@@ -207,5 +207,5 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
         fail :: ByteString -> [ByteString]
         fail x = [append "*** " x]
 
-        success :: ByteString -> [ByteString]
-        success x = [append "> " x]
+        success :: [ByteString] -> [ByteString]
+        success = map (append "> ")
