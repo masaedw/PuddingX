@@ -1,7 +1,7 @@
 {-# OPTIONS -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Pudding (
-  module Pudding.Parse,
+  conduitPuddingParser,
   conduitPuddingEvaluator,
   ) where
 
