@@ -5,6 +5,7 @@ import Control.Applicative ((<|>),(<$>), (*>), (<*))
 import Control.Monad.State (State, get, put, runState)
 import Control.Monad.Trans.Either (EitherT(..), left, right)
 import Control.Monad.Trans.Resource (MonadThrow)
+import Control.Monad.Trans (lift)
 import Data.Attoparsec.ByteString (Parser, many')
 import qualified Data.Attoparsec.ByteString as A
 import Data.Attoparsec.Char8 as AC hiding (space)
@@ -117,10 +118,19 @@ showStack :: PProc
 showStack = get >>= return . (:[]) . pack . show . stack
 
 plus :: PProc
---plus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b+a):xs)
---plus ((PDString a):(PDString b):xs) = Right ([], (PDString $ append b a):xs)
---plus _ = Left "+ needs 2 operand"
-plus = undefined
+plus = transaction $ do
+  a <- pop
+  b <- pop
+  pushX $ plus' a b
+  return []
+  where
+    plus' :: PData -> PData -> Either ByteString PData
+    plus' (PDNumber a) (PDNumber b) = Right . PDNumber $ a + b
+    plus' _ _ = Left "+ needs 2 Numbers"
+
+    pushX :: Either ByteString PData -> EnvWithError ()
+    pushX (Right x) = lift $ push x
+    pushX (Left m) = left m
 
 minus :: PProc
 --minus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b-a):xs)
