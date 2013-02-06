@@ -3,19 +3,18 @@ module Pudding where
 
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
 import Control.Monad.State (State, get, put, runState)
-import Control.Monad.Trans.Either (EitherT(..), left, right)
+import Control.Monad.Error (runErrorT, catchError, throwError, ErrorT, Error(strMsg))
 import Control.Monad.Trans.Resource (MonadThrow)
 import Control.Monad.Trans (lift)
-import Data.Attoparsec.ByteString (Parser, many')
-import qualified Data.Attoparsec.ByteString as A
-import Data.Attoparsec.Char8 as AC hiding (space)
+import Data.Attoparsec.ByteString (choice, many', Parser, Result, IResult(..))
+import qualified Data.Attoparsec.ByteString as A (takeWhile1)
+import Data.Attoparsec.Char8 as AC (char, string, double, feed, parse, isSpace_w8, skipSpace, sepBy, satisfy, notInClass)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
-import Data.Conduit as C (Conduit, GLInfConduit, (=$=))
-import qualified Data.Conduit.List as CL (map, concatMap, concatMapAccum)
+import Data.Conduit as C (Conduit, (=$=))
+import qualified Data.Conduit.List as CL (map, concatMapAccum)
 import Data.Functor ((<$))
 import Data.Map as Map (Map, fromList, lookup)
 import Data.Tuple (swap)
-import GHC.Word (Word8)
 import Prelude hiding (div)
 
 data PToken = PWord ByteString
@@ -121,16 +120,12 @@ plus :: PProc
 plus = transaction $ do
   a <- pop
   b <- pop
-  pushX $ plus' a b
+  plus' a b
   return []
   where
-    plus' :: PData -> PData -> Either ByteString PData
-    plus' (PDNumber a) (PDNumber b) = Right . PDNumber $ a + b
-    plus' _ _ = Left "+ needs 2 Numbers"
-
-    pushX :: Either ByteString PData -> EnvWithError ()
-    pushX (Right x) = lift $ push x
-    pushX (Left m) = left m
+    plus' :: PData -> PData -> EnvWithError ()
+    plus' (PDNumber a) (PDNumber b) = lift . push . PDNumber $ a + b
+    plus' _ _ = throwError "+ needs 2 Numbers"
 
 minus :: PProc
 --minus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b-a):xs)
@@ -164,21 +159,17 @@ initEnv = Environment { stack = []
                                            ]
                       }
 
+instance Error ByteString where strMsg = pack
+
 type Env = State Environment
-type EnvWithError = EitherT ByteString Env
+type EnvWithError = ErrorT ByteString Env
 
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
 transaction :: EnvWithError a -> EnvWithError a
-transaction = EitherT . trans' . runEitherT
-    where
-      trans' :: Env (Either ByteString a) -> Env (Either ByteString a)
-      trans' x = do
-        origEnv <- get
-        case runState x origEnv of
-          (r@(Right _), newEnv) -> put newEnv >> return r
-          (l@(Left _), _) -> put origEnv >> return l
-
+transaction m = do
+  origEnv <- get
+  catchError m $ (put origEnv >>) . throwError
 
 push :: PData -> Env ()
 push d = do
@@ -189,8 +180,8 @@ pop :: EnvWithError PData
 pop = do
   env@(Environment s _) <- get
   case s of
-    (a:as) -> put env { stack = as } >> right a
-    _ -> left "empty stack"
+    (a:as) -> put env { stack = as } >> return a
+    _ -> throwError "empty stack"
 
 data PContainer = PData PData
                 | PProc ByteString (Maybe PProc)
@@ -220,7 +211,7 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
     eval (PProc word Nothing) = return [append "undefined word " word]
 
     apply :: PProc -> Env [ByteString]
-    apply p = runEitherT p >>= return . either fail success
+    apply p = runErrorT p >>= return . either fail success
       where
         fail :: ByteString -> [ByteString]
         fail x = [append "*** " x]
