@@ -22,7 +22,6 @@ data PData = PDNumber Double
            | PDString ByteString
            deriving (Eq, Show)
 
---type PProc = [PData] -> Either ByteString ([ByteString], [PData])
 type PProc = Env [ByteString]
 
 data Environment = Environment
@@ -30,13 +29,13 @@ data Environment = Environment
                    , wordMap :: Map ByteString PProc
                    }
 
+type Env = ErrorT String (State Environment)
+
 showTop :: PProc
 showTop = (:[]) . pack . show <$> pop
 
 showStack :: PProc
 showStack = (:[]) . pack . show . stack <$> get
-
-type Op2 = PData -> PData -> Either String PData
 
 numericOp2 :: (a -> PData) -> String -> (Double -> Double -> a) -> PProc
 numericOp2 ctor name op = transaction (const msg) $ do
@@ -44,7 +43,7 @@ numericOp2 ctor name op = transaction (const msg) $ do
   b <- pop
   either throwError (\x -> push x >> return []) $ op' a b
   where
-    op' :: Op2
+    op' :: PData -> PData -> Either String PData
     op' (PDNumber a) (PDNumber b) = return . ctor $ op b a
     op' _ _ = throwError msg
 
@@ -104,8 +103,6 @@ initEnv = Environment { stack = []
                                            ,(">=", ge)
                                            ]
                       }
-
-type Env = ErrorT String (State Environment)
 
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
