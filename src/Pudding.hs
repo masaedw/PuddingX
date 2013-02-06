@@ -120,27 +120,47 @@ showStack = (:[]) . pack . show . stack <$> get
 
 type Op2 = PData -> PData -> Either String PData
 
-numericOp2 :: String -> (Double -> Double -> Double) -> PProc
-numericOp2 msg op = transaction (const msg) $ do
+numericOp2 :: (a -> PData) -> String -> (Double -> Double -> a) -> PProc
+numericOp2 ctor name op = transaction (const msg) $ do
   a <- pop
   b <- pop
   either throwError (\x -> push x >> return []) $ op' a b
   where
     op' :: Op2
-    op' (PDNumber a) (PDNumber b) = return . PDNumber $ op b a
+    op' (PDNumber a) (PDNumber b) = return . ctor $ op b a
     op' _ _ = throwError msg
 
+    msg = name ++ " needs 2 Numbers"
+
 plus :: PProc
-plus = numericOp2 "+ needs 2 Numbers" (+)
+plus = numericOp2 PDNumber "+" (+)
 
 minus :: PProc
-minus = numericOp2 "- needs 2 Numbers" (-)
+minus = numericOp2 PDNumber "-" (-)
 
 mul :: PProc
-mul = numericOp2 "* needs 2 Numbers" (*)
+mul = numericOp2 PDNumber "*" (*)
 
 div :: PProc
-div = numericOp2 "/ needs 2 Numbers" (/)
+div = numericOp2 PDNumber "/" (/)
+
+eq :: PProc
+eq = numericOp2 PDBool "==" (==)
+
+ne :: PProc
+ne = numericOp2 PDBool "!=" (/=)
+
+lt :: PProc
+lt = numericOp2 PDBool "<" (<)
+
+le :: PProc
+le = numericOp2 PDBool "<=" (<=)
+
+gt :: PProc
+gt = numericOp2 PDBool ">" (>)
+
+ge :: PProc
+ge = numericOp2 PDBool ">=" (>=)
 
 dup :: PProc
 dup = do
@@ -158,6 +178,12 @@ initEnv = Environment { stack = []
                                            ,("*", mul)
                                            ,("/", div)
                                            ,("dup", dup)
+                                           ,("==", eq)
+                                           ,("!=", ne)
+                                           ,("<", lt)
+                                           ,("<=", le)
+                                           ,(">", gt)
+                                           ,(">=", ge)
                                            ]
                       }
 
