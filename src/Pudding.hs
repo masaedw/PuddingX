@@ -120,33 +120,27 @@ showStack = (:[]) . pack . show . stack <$> get
 
 type Op2 = PData -> PData -> Either String PData
 
-op2 :: Op2 -> PProc
-op2 f = transaction $ do
+numericOp2 :: String -> (Double -> Double -> Double) -> PProc
+numericOp2 msg op = transaction (const msg) $ do
   a <- pop
   b <- pop
-  either throwError (\x -> push x >> return []) $ f a b
+  either throwError (\x -> push x >> return []) $ op' a b
+  where
+    op' :: Op2
+    op' (PDNumber a) (PDNumber b) = return . PDNumber $ op b a
+    op' _ _ = throwError msg
 
 plus :: PProc
-plus = op2 plus'
-  where
-    plus' :: Op2
-    plus' (PDNumber a) (PDNumber b) = return . PDNumber $ a + b
-    plus' _ _ = throwError "+ needs 2 Numbers"
+plus = numericOp2 "+ needs 2 Numbers" (+)
 
 minus :: PProc
---minus ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b-a):xs)
---minus _ = Left "- needs 2 operands"
-minus = undefined
+minus = numericOp2 "- needs 2 Numbers" (-)
 
 mul :: PProc
---mul ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b*a):xs)
---mul _ = Left "* needs 2 operands"
-mul = undefined
+mul = numericOp2 "* needs 2 Numbers" (*)
 
 div :: PProc
---div ((PDNumber a):(PDNumber b):xs) = Right ([], (PDNumber $ b/a):xs)
---div _ = Left "/ needs 2 operands"
-div = undefined
+div = numericOp2 "/ needs 2 Numbers" (/)
 
 dup :: PProc
 --dup (x:xs) = Right ([], x:x:xs)
@@ -169,10 +163,10 @@ type Env = ErrorT String (State Environment)
 
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
-transaction :: Env a -> Env a
-transaction m = do
+transaction :: (String -> String) -> Env a -> Env a
+transaction msg m = do
   origEnv <- get
-  catchError m $ (put origEnv >>) . throwError
+  catchError m $ (put origEnv >>) . throwError . msg
 
 push :: PData -> Env ()
 push d = do
