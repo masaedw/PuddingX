@@ -118,13 +118,18 @@ showTop = (:[]) . pack . show <$> pop
 showStack :: PProc
 showStack = (:[]) . pack . show . stack <$> get
 
-plus :: PProc
-plus = transaction $ do
+type Op2 = PData -> PData -> Either String PData
+
+op2 :: Op2 -> PProc
+op2 f = transaction $ do
   a <- pop
   b <- pop
-  either throwError (\x -> push x >> return []) $ plus' a b
+  either throwError (\x -> push x >> return []) $ f a b
+
+plus :: PProc
+plus = op2 plus'
   where
-    plus' :: PData -> PData -> Either String PData
+    plus' :: Op2
     plus' (PDNumber a) (PDNumber b) = return . PDNumber $ a + b
     plus' _ _ = throwError "+ needs 2 Numbers"
 
