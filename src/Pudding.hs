@@ -2,6 +2,7 @@
 module Pudding where
 
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
+import Control.Monad.Error (catchError)
 import Control.Monad.State (State, get, put, runState)
 import Control.Monad.Trans.Either (EitherT(..), left, right)
 import Control.Monad.Trans.Resource (MonadThrow)
@@ -170,15 +171,9 @@ type EnvWithError = EitherT ByteString Env
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
 transaction :: EnvWithError a -> EnvWithError a
-transaction = EitherT . trans' . runEitherT
-    where
-      trans' :: Env (Either ByteString a) -> Env (Either ByteString a)
-      trans' x = do
-        origEnv <- get
-        case runState x origEnv of
-          (r@(Right _), newEnv) -> put newEnv >> return r
-          (l@(Left _), _) -> put origEnv >> return l
-
+transaction x = do
+  orig <- get
+  x `catchError` \msg -> put orig >> left msg
 
 push :: PData -> Env ()
 push d = do
