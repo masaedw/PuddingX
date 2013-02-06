@@ -99,7 +99,7 @@ data PData = PDNumber Double
            deriving (Eq, Show)
 
 --type PProc = [PData] -> Either ByteString ([ByteString], [PData])
-type PProc = EitherT ByteString Env ByteString
+type PProc = EnvWithError ByteString
 
 data Environment = Environment
                    { stack :: [PData]
@@ -151,13 +151,14 @@ initEnv = Environment { stack = []
                       }
 
 type Env = State Environment
+type EnvWithError = EitherT ByteString Env
 
 push :: PData -> Env ()
 push d = do
   env@(Environment s _) <- get
   put env { stack = d:s }
 
-pop :: EitherT ByteString Env PData
+pop :: EnvWithError PData
 pop = do
   env@(Environment s _) <- get
   case s of
