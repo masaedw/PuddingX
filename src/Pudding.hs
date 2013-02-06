@@ -37,7 +37,7 @@ pToken = PNumber <$> double
          <|> PBool <$> choice [True <$ string "true"
                               ,False <$ string "false"]
          <|> PString <$> pString
-         <|> PWord <$> (A.takeWhile1 $ not . isSpace_w8)
+         <|> PWord <$> A.takeWhile1 (not . isSpace_w8)
 
 -- | string paresr
 --
@@ -68,7 +68,7 @@ pChar = AC.satisfy $ AC.notInClass "\"\\"
 -- >>> parseOnly pEscape $ pack "\\t"
 -- Right '\t'
 pEscape :: Parser Char
-pEscape = char '\\' *> (unEscape <$> (AC.satisfy (`elem` "\"\\0abfnrt")))
+pEscape = char '\\' *> (unEscape <$> AC.satisfy (`elem` "\"\\0abfnrt"))
   where
     unEscape '"' = '"'
     unEscape '\\' = '\\'
@@ -91,11 +91,11 @@ conduitPuddingParser = CL.concatMapAccum step ""
     step :: ByteString -> ByteString -> (ByteString, [PToken])
     step input rest = case parseFeed parser (append rest input) of
       Done t r -> (t, r)
-      Fail _ _ _ -> ("", [])
+      Fail { } -> ("", [])
       _ -> error "Partial should not happen"
 
     parser :: Parser [PToken]
-    parser = (skipSpace >> pToken `sepBy` skipSpace)
+    parser = skipSpace >> pToken `sepBy` skipSpace
 
     parseFeed :: Parser [PToken] -> ByteString -> Result [PToken]
     parseFeed p i = feed (parse p i) ""
@@ -117,7 +117,7 @@ showTop :: PProc
 showTop = (:[]) . pack . show <$> pop
 
 showStack :: PProc
-showStack = get >>= return . (:[]) . pack . show . stack
+showStack = (:[]) . pack . show . stack <$> get
 
 plus :: PProc
 plus = transaction $ do
@@ -188,7 +188,7 @@ data PContainer = PData PData
                 | PProc ByteString (Maybe PProc)
 
 lookupWord :: ByteString -> Env (Maybe PProc)
-lookupWord x = get >>= return . Map.lookup x . wordMap
+lookupWord x = Map.lookup x . wordMap <$> get
 
 fromToken :: PToken -> Env PContainer
 fromToken (PNumber x) = return . PData $ PDNumber x
@@ -212,7 +212,7 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
     eval (PProc word Nothing) = return [append "undefined word " word]
 
     apply :: PProc -> Env [ByteString]
-    apply p = runErrorT p >>= return . either errmsg success
+    apply p = either errmsg success <$> runErrorT p
       where
         errmsg :: String -> [ByteString]
         errmsg x = ["*** " `append` pack x]
