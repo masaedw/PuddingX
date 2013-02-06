@@ -1,9 +1,10 @@
+{-# OPTIONS -Wall -O2 #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Pudding where
 
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
 import Control.Monad.State (State, get, put, runState)
-import Control.Monad.Error (runErrorT, catchError, throwError, ErrorT, Error(strMsg))
+import Control.Monad.Error (runErrorT, catchError, throwError, ErrorT)
 import Control.Monad.Trans.Resource (MonadThrow)
 import Control.Monad.Trans (lift)
 import Data.Attoparsec.ByteString (choice, many', Parser, Result, IResult(..))
@@ -78,6 +79,7 @@ pEscape = char '\\' *> (unEscape <$> (AC.satisfy (`elem` "\"\\0abfnrt")))
     unEscape 'n' = '\n'
     unEscape 'r' = '\r'
     unEscape 't' = '\t'
+    unEscape a = error $ "unknown character: " ++ [a]
 
 -- |
 -- >>> :m +Data.Conduit Data.Conduit.List
@@ -90,6 +92,7 @@ conduitPuddingParser = CL.concatMapAccum step ""
     step input rest = case parseFeed parser (append rest input) of
       Done t r -> (t, r)
       Fail _ _ _ -> ("", [])
+      _ -> error "Partial should not happen"
 
     parser :: Parser [PToken]
     parser = (skipSpace >> pToken `sepBy` skipSpace)
@@ -159,10 +162,8 @@ initEnv = Environment { stack = []
                                            ]
                       }
 
-instance Error ByteString where strMsg = pack
-
 type Env = State Environment
-type EnvWithError = ErrorT ByteString Env
+type EnvWithError = ErrorT String Env
 
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
@@ -211,10 +212,10 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
     eval (PProc word Nothing) = return [append "undefined word " word]
 
     apply :: PProc -> Env [ByteString]
-    apply p = runErrorT p >>= return . either fail success
+    apply p = runErrorT p >>= return . either errmsg success
       where
-        fail :: ByteString -> [ByteString]
-        fail x = [append "*** " x]
+        errmsg :: String -> [ByteString]
+        errmsg x = ["*** " `append` pack x]
 
         success :: [ByteString] -> [ByteString]
         success = map (append "> ")
