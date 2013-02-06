@@ -143,9 +143,11 @@ div :: PProc
 div = numericOp2 "/ needs 2 Numbers" (/)
 
 dup :: PProc
---dup (x:xs) = Right ([], x:x:xs)
---dup _ = Left "dup needs 1 operands"
-dup = undefined
+dup = do
+  x <- pop
+  push x
+  push x
+  return []
 
 initEnv :: Environment
 initEnv = Environment { stack = []
