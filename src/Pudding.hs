@@ -3,11 +3,10 @@
 module Pudding where
 
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
-import Control.Monad.Error (catchError)
-import Control.Monad.State (State, get, put, runState)
 import Control.Monad.Error (runErrorT, catchError, throwError, ErrorT)
-import Control.Monad.Trans.Resource (MonadThrow)
+import Control.Monad.State (State, get, put, runState)
 import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Resource (MonadThrow)
 import Data.Attoparsec.ByteString (choice, many', Parser, Result, IResult(..))
 import qualified Data.Attoparsec.ByteString as A (takeWhile1)
 import Data.Attoparsec.Char8 as AC (char, string, double, feed, parse, isSpace_w8, skipSpace, sepBy, satisfy, notInClass)
