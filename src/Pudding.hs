@@ -5,7 +5,7 @@ module Pudding (
   conduitPuddingEvaluator,
   ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), pure)
 import Control.Monad.Error (ErrorT, runErrorT, catchError, throwError)
 import Control.Monad.State (State, get, put, runState)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
@@ -32,10 +32,10 @@ type Env = ErrorT String (State Environment)
 type PProc = Env [ByteString]
 
 showTop :: PProc
-showTop = (:[]) . pack . show <$> pop
+showTop = pure . pack . show <$> pop
 
 showStack :: PProc
-showStack = (:[]) . pack . show . stack <$> get
+showStack = pure . pack . show . stack <$> get
 
 numericOp2 :: (a -> PData) -> String -> (Double -> Double -> a) -> PProc
 numericOp2 ctor name op = transaction (const msg) $ do
@@ -143,7 +143,7 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
     step t e = swap $ runState s e
       where
         s :: State Environment [ByteString]
-        s = either ((:[]) . pack . ("*** "++)) id <$> runErrorT (fromToken t >>= eval)
+        s = either (pure . pack . ("*** "++)) id <$> runErrorT (fromToken t >>= eval)
 
     eval :: PContainer -> Env [ByteString]
     eval (PData x) = push x >> return []
