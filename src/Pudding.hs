@@ -39,14 +39,11 @@ showStack = (:[]) . pack . show . stack <$> get
 
 numericOp2 :: (a -> PData) -> String -> (Double -> Double -> a) -> PProc
 numericOp2 ctor name op = transaction (const msg) $ do
-  a <- pop
-  b <- pop
-  either throwError (\x -> push x >> return []) $ op' a b
+  PDNumber a <- pop
+  PDNumber b <- pop
+  push . ctor $ op a b
+  return []
   where
-    op' :: PData -> PData -> Either String PData
-    op' (PDNumber a) (PDNumber b) = return . ctor $ op b a
-    op' _ _ = throwError msg
-
     msg = name ++ " needs 2 Numbers"
 
 plus :: PProc
