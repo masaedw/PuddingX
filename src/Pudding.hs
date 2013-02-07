@@ -22,14 +22,14 @@ data PData = PDNumber Double
            | PDString ByteString
            deriving (Eq, Show)
 
-type PProc = Env [ByteString]
-
 data Environment = Environment
                    { stack :: [PData]
                    , wordMap :: Map ByteString PProc
                    }
 
 type Env = ErrorT String (State Environment)
+
+type PProc = Env [ByteString]
 
 showTop :: PProc
 showTop = (:[]) . pack . show <$> pop
