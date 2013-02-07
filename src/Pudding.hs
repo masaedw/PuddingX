@@ -41,7 +41,7 @@ numericOp2 :: (a -> PData) -> String -> (Double -> Double -> a) -> PProc
 numericOp2 ctor name op = transaction (const msg) $ do
   PDNumber a <- pop
   PDNumber b <- pop
-  push . ctor $ op a b
+  push . ctor $ op b a
   return []
   where
     msg = name ++ " needs 2 Numbers"
