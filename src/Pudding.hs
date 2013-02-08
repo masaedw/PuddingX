@@ -62,6 +62,9 @@ pop = do
     (a:as) -> put env { stack = as } >> return a
     _ -> throwError "empty stack"
 
+setState :: PState -> Env ()
+setState s = modify $ \e -> e { state = s }
+
 -- pudding procedure
 
 showTop :: PProc
