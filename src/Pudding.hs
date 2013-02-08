@@ -35,6 +35,29 @@ type Env = ErrorT String (State Environment)
 
 type PProc = Env [ByteString]
 
+-- basic environment operators
+
+-- |
+-- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
+transaction :: (String -> String) -> Env a -> Env a
+transaction msg m = do
+  origEnv <- get
+  catchError m $ (put origEnv >>) . throwError . msg
+
+push :: PData -> Env ()
+push d = do
+  env@Environment { stack = s } <- get
+  put env { stack = d:s }
+
+pop :: Env PData
+pop = do
+  env@Environment { stack = s } <- get
+  case s of
+    (a:as) -> put env { stack = as } >> return a
+    _ -> throwError "empty stack"
+
+-- pudding procedure
+
 showTop :: PProc
 showTop = pure . pack . show <$> pop
 
@@ -76,24 +99,6 @@ initEnv = Environment { stack = []
                       , state = Run
                       }
 
--- |
--- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
-transaction :: (String -> String) -> Env a -> Env a
-transaction msg m = do
-  origEnv <- get
-  catchError m $ (put origEnv >>) . throwError . msg
-
-push :: PData -> Env ()
-push d = do
-  env@Environment { stack = s } <- get
-  put env { stack = d:s }
-
-pop :: Env PData
-pop = do
-  env@Environment { stack = s } <- get
-  case s of
-    (a:as) -> put env { stack = as } >> return a
-    _ -> throwError "empty stack"
 
 data PContainer = PData PData
                 | PProc ByteString PProc
