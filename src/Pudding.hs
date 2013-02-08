@@ -46,36 +46,6 @@ numericOp2 ctor name op = transaction (const msg) $ do
   where
     msg = name ++ " needs 2 Numbers"
 
-plus :: PProc
-plus = numericOp2 PDNumber "+" (+)
-
-minus :: PProc
-minus = numericOp2 PDNumber "-" (-)
-
-mul :: PProc
-mul = numericOp2 PDNumber "*" (*)
-
-div :: PProc
-div = numericOp2 PDNumber "/" (/)
-
-eq :: PProc
-eq = numericOp2 PDBool "==" (==)
-
-ne :: PProc
-ne = numericOp2 PDBool "!=" (/=)
-
-lt :: PProc
-lt = numericOp2 PDBool "<" (<)
-
-le :: PProc
-le = numericOp2 PDBool "<=" (<=)
-
-gt :: PProc
-gt = numericOp2 PDBool ">" (>)
-
-ge :: PProc
-ge = numericOp2 PDBool ">=" (>=)
-
 dup :: PProc
 dup = do
   x <- pop
@@ -87,17 +57,17 @@ initEnv :: Environment
 initEnv = Environment { stack = []
                       , wordMap = fromList [(".", showTop)
                                            ,(".s", showStack)
-                                           ,("+", plus)
-                                           ,("-", minus)
-                                           ,("*", mul)
-                                           ,("/", div)
                                            ,("dup", dup)
-                                           ,("==", eq)
-                                           ,("!=", ne)
-                                           ,("<", lt)
-                                           ,("<=", le)
-                                           ,(">", gt)
-                                           ,(">=", ge)
+                                           ,("+", numericOp2 PDNumber "+" (+))
+                                           ,("-", numericOp2 PDNumber "-" (-))
+                                           ,("*", numericOp2 PDNumber "*" (*))
+                                           ,("/", numericOp2 PDNumber "/" (/))
+                                           ,("==", numericOp2 PDBool "==" (==))
+                                           ,("!=", numericOp2 PDBool "!=" (/=))
+                                           ,("<", numericOp2 PDBool "<" (<))
+                                           ,("<=", numericOp2 PDBool "<=" (<=))
+                                           ,(">", numericOp2 PDBool ">" (>))
+                                           ,(">=", numericOp2 PDBool ">=" (>=))
                                            ]
                       }
 
