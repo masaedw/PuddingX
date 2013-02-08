@@ -1,16 +1,19 @@
 {-# OPTIONS -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Pudding (
   conduitPuddingParser,
   conduitPuddingEvaluator,
   ) where
 
-import Control.Applicative ((<$>), pure)
-import Control.Monad.Error (ErrorT, runErrorT, catchError, throwError)
-import Control.Monad.State (State, get, put, runState)
+import Control.Applicative (Applicative, (<$>), pure)
+import Control.Monad.Error (MonadError, ErrorT, runErrorT, catchError, throwError)
+import Control.Monad.State (MonadState, StateT, State, get, put, runState, modify)
+import Control.Monad.Trans (MonadIO)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
 import Data.Conduit as C (Conduit, (=$=))
 import qualified Data.Conduit.List as CL (map, concatMapAccum)
+import Data.Functor.Identity (Identity)
 import Data.Map as Map (Map, fromList, lookup)
 import Data.Tuple (swap)
 import Prelude hiding (div)
@@ -31,7 +34,10 @@ data Environment = Environment
                    , state :: PState
                    }
 
-type Env = ErrorT String (State Environment)
+newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT Environment m) a }
+                 deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadError String)
+
+type Env = EnvT Identity
 
 type PProc = Env [ByteString]
 
@@ -123,7 +129,7 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
     step t e = swap $ runState s e
       where
         s :: State Environment [ByteString]
-        s = either (pure . pack . ("*** "++)) id <$> runErrorT (fromToken t >>= eval)
+        s = either (pure . pack . ("*** "++)) id <$> (runErrorT . runEnvT) (fromToken t >>= eval)
 
     eval :: PContainer -> Env [ByteString]
     eval (PData x) = push x >> return []
