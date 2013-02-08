@@ -22,9 +22,13 @@ data PData = PDNumber Double
            | PDString ByteString
            deriving (Eq, Show)
 
+data PState = Run
+            | Compile
+
 data Environment = Environment
                    { stack :: [PData]
                    , wordMap :: Map ByteString PProc
+                   , state :: PState
                    }
 
 type Env = ErrorT String (State Environment)
@@ -69,6 +73,7 @@ initEnv = Environment { stack = []
                                            ,(">", numericOp2 PDBool ">" (>))
                                            ,(">=", numericOp2 PDBool ">=" (>=))
                                            ]
+                      , state = Run
                       }
 
 -- |
@@ -80,12 +85,12 @@ transaction msg m = do
 
 push :: PData -> Env ()
 push d = do
-  env@(Environment s _) <- get
+  env@Environment { stack = s } <- get
   put env { stack = d:s }
 
 pop :: Env PData
 pop = do
-  env@(Environment s _) <- get
+  env@Environment { stack = s } <- get
   case s of
     (a:as) -> put env { stack = as } >> return a
     _ -> throwError "empty stack"
