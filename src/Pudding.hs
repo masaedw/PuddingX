@@ -81,6 +81,23 @@ numericOp2 ctor name op = transaction (const msg) $ do
   where
     msg = name ++ " needs 2 Numbers"
 
+booleanOp2 :: (a -> PData) -> String -> (Bool -> Bool -> a) -> PProc
+booleanOp2 ctor name op = transaction (const msg) $ do
+  PDBool a <- pop
+  PDBool b <- pop
+  push . ctor $ op b a
+  return []
+  where
+    msg = name ++ " nees 2 Booleans"
+
+booleanOp1 :: (a -> PData) -> String -> (Bool -> a) -> PProc
+booleanOp1 ctor name op = transaction (const msg) $ do
+  PDBool a <- pop
+  push . ctor $ op a
+  return []
+  where
+    msg = name ++ " nees 1 Boolean"
+
 dup :: PProc
 dup = do
   x <- pop
@@ -103,6 +120,9 @@ initEnv = Environment { stack = []
                                            ,("<=", numericOp2 PDBool "<=" (<=))
                                            ,(">", numericOp2 PDBool ">" (>))
                                            ,(">=", numericOp2 PDBool ">=" (>=))
+                                           ,("&&", booleanOp2 PDBool "&&" (&&))
+                                           ,("||", booleanOp2 PDBool "||" (||))
+                                           ,("!", booleanOp1 PDBool "!" not)
                                            ]
                       , state = Run
                       }
