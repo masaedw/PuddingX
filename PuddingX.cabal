@@ -18,6 +18,7 @@ executable PuddingX
   main-is:             Main.hs
   hs-source-dirs:      src
   other-modules:       Pudding
+  ghc-options:         -O2 -Wall
   build-depends:       base ==4.5.*
                      , attoparsec >=0.10.3
                      , attoparsec-conduit
