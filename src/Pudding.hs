@@ -9,7 +9,7 @@ import Control.Applicative (Applicative, (<$>), pure)
 import Control.Monad.Error (MonadError, ErrorT, runErrorT, catchError, throwError)
 import Control.Monad.State (MonadState, StateT, State, get, put, runState, modify)
 import Control.Monad.Trans (MonadIO)
-import Data.ByteString.Char8 as BC (ByteString, pack, append)
+import Data.ByteString.Char8 as BC (ByteString, pack, unpack, append)
 import Data.Conduit as C (Conduit, (=$=))
 import qualified Data.Conduit.List as CL (map, concatMapAccum)
 import Data.Functor.Identity (Identity)
@@ -132,7 +132,7 @@ data PContainer = PData PData
                 | PProc ByteString PProc
 
 lookupWord :: ByteString -> Env PProc
-lookupWord x =  maybe (throwError "undefined word") return . Map.lookup x . wordMap =<< get
+lookupWord x =  maybe (throwError $ "undefined word: " ++ unpack x) return . Map.lookup x . wordMap =<< get
 
 fromToken :: PToken -> Env PContainer
 fromToken (PNumber x) = return . PData $ PDNumber x
