@@ -26,3 +26,4 @@ executable PuddingX
                      , containers
                      , mtl
                      , resourcet
+                     , transformers
