@@ -1,3 +1,4 @@
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Pudding (
@@ -6,15 +7,13 @@ module Pudding (
   ) where
 
 import Control.Applicative (Applicative, (<$>), pure)
-import Control.Monad.Error (MonadError, ErrorT, runErrorT, catchError, throwError)
-import Control.Monad.State (MonadState, StateT, State, get, put, runState, modify)
+import Control.Monad.Error (MonadError, ErrorT, catchError, throwError)
+import Control.Monad.State (MonadState, StateT, get, put, runState, modify)
 import Control.Monad.Trans (MonadIO)
-import Data.ByteString.Char8 as BC (ByteString, pack, unpack, append)
-import Data.Conduit as C (Conduit, (=$=))
-import qualified Data.Conduit.List as CL (map, concatMapAccum)
-import Data.Functor.Identity (Identity)
+import Data.ByteString.Char8 as BC (ByteString, pack, unpack, append, concat)
+import Data.Conduit as C (Conduit)
+import qualified Data.Conduit.List as CL (mapM)
 import Data.Map as Map (Map, fromList, lookup)
-import Data.Tuple (swap)
 import Prelude hiding (div)
 import Pudding.Parse
 
@@ -29,50 +28,48 @@ data PState = Run
 
 data Environment = Environment
                    { stack :: [PData]
-                   , wordMap :: Map ByteString PProc
+                   , wordMap :: Monad m => Map ByteString (PProc m)
                    , state :: PState
                    }
 
 newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT Environment m) a }
                  deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadError String)
 
-type Env = EnvT Identity
-
-type PProc = Env [ByteString]
+type PProc m = EnvT m [ByteString]
 
 -- basic environment operators
 
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
-transaction :: (String -> String) -> Env a -> Env a
+transaction :: Monad m => (String -> String) -> EnvT m a -> EnvT m a
 transaction msg m = do
   origEnv <- get
   catchError m $ (put origEnv >>) . throwError . msg
 
-push :: PData -> Env ()
+push :: Monad m => PData -> EnvT m ()
 push d = do
   env@Environment { stack = s } <- get
   put env { stack = d:s }
 
-pop :: Env PData
+pop :: Monad m => EnvT m PData
 pop = do
   env@Environment { stack = s } <- get
   case s of
     (a:as) -> put env { stack = as } >> return a
     _ -> throwError "empty stack"
 
-setState :: PState -> Env ()
+setState :: Monad m => PState -> EnvT m ()
 setState s = modify $ \e -> e { state = s }
 
 -- pudding procedure
 
-showTop :: PProc
-showTop = pure . pack . show <$> pop
+showTop :: Monad m => PProc m
+showTop = pop >>= return . pure . pack . show
 
-showStack :: PProc
-showStack = pure . pack . show . stack <$> get
+showStack :: Monad m => PProc m
+showStack = get >>= return . pure . pack . show . stack
 
-numericOp2 :: (a -> PData) -> String -> (Double -> Double -> a) -> PProc
+numericOp2 :: Monad m => (a -> PData) -> String -> (Double -> Double -> a) -> PProc m
 numericOp2 ctor name op = transaction (const msg) $ do
   PDNumber a <- pop
   PDNumber b <- pop
@@ -81,7 +78,7 @@ numericOp2 ctor name op = transaction (const msg) $ do
   where
     msg = name ++ " needs 2 Numbers"
 
-booleanOp2 :: (a -> PData) -> String -> (Bool -> Bool -> a) -> PProc
+booleanOp2 :: Monad m => (a -> PData) -> String -> (Bool -> Bool -> a) -> PProc m
 booleanOp2 ctor name op = transaction (const msg) $ do
   PDBool a <- pop
   PDBool b <- pop
@@ -90,7 +87,7 @@ booleanOp2 ctor name op = transaction (const msg) $ do
   where
     msg = name ++ " nees 2 Booleans"
 
-booleanOp1 :: (a -> PData) -> String -> (Bool -> a) -> PProc
+booleanOp1 :: Monad m => (a -> PData) -> String -> (Bool -> a) -> PProc m
 booleanOp1 ctor name op = transaction (const msg) $ do
   PDBool a <- pop
   push . ctor $ op a
@@ -98,7 +95,7 @@ booleanOp1 ctor name op = transaction (const msg) $ do
   where
     msg = name ++ " nees 1 Boolean"
 
-dup :: PProc
+dup :: Monad m => PProc m
 dup = do
   x <- pop
   push x
@@ -128,31 +125,31 @@ initEnv = Environment { stack = []
                       }
 
 
-data PContainer = PData PData
-                | PProc ByteString PProc
+data PContainer m = PData PData
+                  | PProc ByteString (PProc m)
 
-lookupWord :: ByteString -> Env PProc
+lookupWord :: Monad m => ByteString -> EnvT m (PProc m)
 lookupWord x =  maybe (throwError $ "undefined word: " ++ unpack x) return . Map.lookup x . wordMap =<< get
 
-fromToken :: PToken -> Env PContainer
+fromToken :: Monad m => PToken -> EnvT m (PContainer m)
 fromToken (PNumber x) = return . PData $ PDNumber x
 fromToken (PBool x) = return . PData $ PDBool x
 fromToken (PString x) = return . PData $ PDString x
-fromToken (PWord x) = PProc x <$> lookupWord x
+fromToken (PWord x) = lookupWord x >>= return . PProc x
 
 -- |
 -- >>> :m +Data.Conduit Data.Conduit.List
 -- >>> runResourceT $ sourceList [PNumber 1.0,PNumber 2.0,PNumber 3.0, PWord $ pack ".s", PWord $ pack "+", PWord $ pack "+", PWord $ pack "."] $= conduitPuddingEvaluator $$ consume
 -- ["> [PDNumber 3.0,PDNumber 2.0,PDNumber 1.0]\n","> PDNumber 6.0\n"]
-conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
-conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\n")
-  where
-    step :: PToken -> Environment -> (Environment, [ByteString])
-    step t e = swap $ runState s e
-      where
-        s :: State Environment [ByteString]
-        s = either (pure . pack . ("*** "++)) id <$> (runErrorT . runEnvT) (fromToken t >>= eval)
+conduitPuddingEvaluator :: (Monad m, Functor m) => Conduit PToken m ByteString
+conduitPuddingEvaluator = undefined
 
-    eval :: PContainer -> Env [ByteString]
-    eval (PData x) = push x >> return []
-    eval (PProc _ p) = map (append "> ") <$> p
+conduitPuddingEvaluator' :: (Monad m, Functor m) => Conduit PToken (EnvT m) ByteString
+conduitPuddingEvaluator' = CL.mapM $ \t -> (fromToken t >>= eval) `catchError` handler
+   where
+    eval :: (Monad m, Functor m) => PContainer m -> EnvT m ByteString
+    eval (PData x) = push x >> return ""
+    eval (PProc _ p) = BC.concat <$> map ((append "> ") . (`append` "\n")) <$> p
+
+    handler :: (Monad m) => String -> EnvT m ByteString
+    handler e = return $ pack ("*** " ++ e)  where
