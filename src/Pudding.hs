@@ -10,6 +10,7 @@ import Control.Applicative (Applicative, (<$>), pure)
 import Control.Monad.Error (MonadError, ErrorT, catchError, throwError)
 import Control.Monad.State (MonadState, StateT, get, put, runState, modify)
 import Control.Monad.Trans (MonadIO)
+import Control.Monad.Writer (MonadWriter, WriterT, tell)
 import Data.ByteString.Char8 as BC (ByteString, pack, unpack, append, concat)
 import Data.Conduit as C (Conduit)
 import qualified Data.Conduit.List as CL (mapM)
@@ -32,8 +33,8 @@ data Environment = Environment
                    , state :: PState
                    }
 
-newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT Environment m) a }
-                 deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadError String)
+newtype EnvT m a = EnvT { runEnvT :: WriterT ByteString (ErrorT String (StateT Environment m)) a }
+                 deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadError String, MonadWriter ByteString)
 
 type PProc m = EnvT m [ByteString]
 
@@ -60,6 +61,12 @@ pop = do
 
 setState :: Monad m => PState -> EnvT m ()
 setState s = modify $ \e -> e { state = s }
+
+ok :: Monad m => ByteString -> EnvT m ()
+ok msg = tell $ BC.concat ["> ", msg, "\n"]
+
+ng :: Monad m => ByteString -> EnvT m ()
+ng msg = tell $ BC.concat ["*** ", msg, "\n"]
 
 -- pudding procedure
 
