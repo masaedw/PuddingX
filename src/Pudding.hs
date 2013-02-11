@@ -8,6 +8,7 @@ module Pudding (
 import Control.Applicative (Applicative, (<$>), pure)
 import Control.Monad.Error (MonadError, ErrorT, runErrorT, catchError, throwError)
 import Control.Monad.State (MonadState, StateT, State, get, put, runState, modify)
+import Control.Monad.Writer (MonadWriter, WriterT, execWriterT, tell)
 import Control.Monad.Trans (MonadIO)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
 import Data.Conduit as C (Conduit, (=$=))
@@ -33,12 +34,12 @@ data Environment = Environment
                    , state :: PState
                    }
 
-newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT Environment m) a }
-                 deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadError String)
+newtype EnvT m a = EnvT { runEnvT :: ErrorT String (WriterT [ByteString] (StateT Environment m)) a }
+                 deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadWriter [ByteString], MonadError String)
 
 type Env = EnvT Identity
 
-type PProc = Env [ByteString]
+type PProc = Env ()
 
 -- basic environment operators
 
@@ -64,20 +65,22 @@ pop = do
 setState :: PState -> Env ()
 setState s = modify $ \e -> e { state = s }
 
+tellUser :: ByteString -> Env ()
+tellUser = tell . pure . append "> "
+
 -- pudding procedure
 
 showTop :: PProc
-showTop = pure . pack . show <$> pop
+showTop = tellUser . pack . show =<< pop
 
 showStack :: PProc
-showStack = pure . pack . show . stack <$> get
+showStack = tellUser . pack . show . stack =<< get
 
 numericOp2 :: (a -> PData) -> String -> (Double -> Double -> a) -> PProc
 numericOp2 ctor name op = transaction (const msg) $ do
   PDNumber a <- pop
   PDNumber b <- pop
   push . ctor $ op b a
-  return []
   where
     msg = name ++ " needs 2 Numbers"
 
@@ -86,7 +89,6 @@ booleanOp2 ctor name op = transaction (const msg) $ do
   PDBool a <- pop
   PDBool b <- pop
   push . ctor $ op b a
-  return []
   where
     msg = name ++ " nees 2 Booleans"
 
@@ -94,7 +96,6 @@ booleanOp1 :: (a -> PData) -> String -> (Bool -> a) -> PProc
 booleanOp1 ctor name op = transaction (const msg) $ do
   PDBool a <- pop
   push . ctor $ op a
-  return []
   where
     msg = name ++ " nees 1 Boolean"
 
@@ -103,7 +104,6 @@ dup = do
   x <- pop
   push x
   push x
-  return []
 
 initEnv :: Environment
 initEnv = Environment { stack = []
@@ -151,8 +151,10 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
     step t e = swap $ runState s e
       where
         s :: State Environment [ByteString]
-        s = either (pure . pack . ("*** "++)) id <$> (runErrorT . runEnvT) (fromToken t >>= eval)
+        s = execWriterT $ do
+          result <- runErrorT . runEnvT $ fromToken t >>= eval
+          either (tell . pure . pack . ("*** " ++)) pure result
 
-    eval :: PContainer -> Env [ByteString]
-    eval (PData x) = push x >> return []
-    eval (PProc _ p) = map (append "> ") <$> p
+    eval :: PContainer -> Env ()
+    eval (PData x) = push x
+    eval (PProc _ p) = p
