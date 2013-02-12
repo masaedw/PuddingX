@@ -140,6 +140,14 @@ fromToken (PBool x) = return . PData $ PDBool x
 fromToken (PString x) = return . PData $ PDString x
 fromToken (PWord x) = PProc x <$> lookupWord x
 
+eval :: PToken -> Env [ByteString]
+eval t = fromToken t >>= eval'
+  where
+    eval' :: PContainer -> Env [ByteString]
+    eval' (PData x) = push x >> return []
+    eval' (PProc _ p) = map (append "> ") <$> p
+
+
 -- |
 -- >>> :m +Data.Conduit Data.Conduit.List
 -- >>> runResourceT $ sourceList [PNumber 1.0,PNumber 2.0,PNumber 3.0, PWord $ pack ".s", PWord $ pack "+", PWord $ pack "+", PWord $ pack "."] $= conduitPuddingEvaluator $$ consume
@@ -151,8 +159,4 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
     step t e = swap $ runState s e
       where
         s :: State Environment [ByteString]
-        s = either (pure . pack . ("*** "++)) id <$> (runErrorT . runEnvT) (fromToken t >>= eval)
-
-    eval :: PContainer -> Env [ByteString]
-    eval (PData x) = push x >> return []
-    eval (PProc _ p) = map (append "> ") <$> p
+        s = either (pure . pack . ("*** "++)) id <$> (runErrorT . runEnvT) (eval t)
