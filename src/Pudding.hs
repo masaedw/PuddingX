@@ -36,6 +36,8 @@ data Environment = Environment
                    { stack :: [PData]
                    , wordMap :: Map ByteString Meaning
                    , state :: PState
+                   , pc :: Int
+                   , callStack :: [Meaning]
                    }
 
 newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT Environment m) a }
@@ -134,6 +136,8 @@ initEnv = Environment { stack = []
                                            ,("_test", UserDefinedWord "_test" [PNumber 3, PNumber 3, PWord "*", PWord "."])
                                            ]
                       , state = Run
+                      , pc = 0
+                      , callStack = []
                       }
 
 
