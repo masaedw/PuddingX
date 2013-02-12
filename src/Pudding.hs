@@ -9,7 +9,7 @@ import Control.Applicative (Applicative, (<$>), pure)
 import Control.Monad.Error (MonadError, ErrorT, runErrorT, catchError, throwError)
 import Control.Monad.State (MonadState, StateT, State, get, put, runState, modify)
 import Control.Monad.Trans (MonadIO)
-import Data.ByteString.Char8 as BC (ByteString, pack, append)
+import Data.ByteString.Char8 as BC (ByteString, pack, append, unpack)
 import Data.Conduit as C (Conduit, (=$=))
 import qualified Data.Conduit.List as CL (map, concatMapAccum)
 import Data.Functor.Identity (Identity)
@@ -25,11 +25,16 @@ data PData = PDNumber Double
            deriving (Eq, Show)
 
 data PState = Run
-            | Compile
+            | Compile ByteString [PToken]
+            | NewWord
+
+data Meaning = ExecutionWord ByteString PProc
+             | UserDefinedWord ByteString [PToken]
+             | CompilingWord ByteString PProc
 
 data Environment = Environment
                    { stack :: [PData]
-                   , wordMap :: Map ByteString PProc
+                   , wordMap :: Map ByteString Meaning
                    , state :: PState
                    }
 
@@ -63,6 +68,9 @@ pop = do
 
 setState :: PState -> Env ()
 setState s = modify $ \e -> e { state = s }
+
+normalProcedure :: ByteString -> PProc -> Meaning
+normalProcedure = ExecutionWord
 
 -- pudding procedure
 
@@ -107,22 +115,22 @@ dup = do
 
 initEnv :: Environment
 initEnv = Environment { stack = []
-                      , wordMap = fromList [(".", showTop)
-                                           ,(".s", showStack)
-                                           ,("dup", dup)
-                                           ,("+", numericOp2 PDNumber "+" (+))
-                                           ,("-", numericOp2 PDNumber "-" (-))
-                                           ,("*", numericOp2 PDNumber "*" (*))
-                                           ,("/", numericOp2 PDNumber "/" (/))
-                                           ,("==", numericOp2 PDBool "==" (==))
-                                           ,("!=", numericOp2 PDBool "!=" (/=))
-                                           ,("<", numericOp2 PDBool "<" (<))
-                                           ,("<=", numericOp2 PDBool "<=" (<=))
-                                           ,(">", numericOp2 PDBool ">" (>))
-                                           ,(">=", numericOp2 PDBool ">=" (>=))
-                                           ,("&&", booleanOp2 PDBool "&&" (&&))
-                                           ,("||", booleanOp2 PDBool "||" (||))
-                                           ,("!", booleanOp1 PDBool "!" not)
+                      , wordMap = fromList [(".", normalProcedure "." showTop)
+                                           ,(".s", normalProcedure ".s" showStack)
+                                           ,("dup", normalProcedure "dup" dup)
+                                           ,("+", normalProcedure "+" $ numericOp2 PDNumber "+" (+))
+                                           ,("-", normalProcedure "-" $ numericOp2 PDNumber "-" (-))
+                                           ,("*", normalProcedure "*" $ numericOp2 PDNumber "*" (*))
+                                           ,("/", normalProcedure "/" $ numericOp2 PDNumber "/" (/))
+                                           ,("==", normalProcedure "==" $ numericOp2 PDBool "==" (==))
+                                           ,("!=", normalProcedure "!=" $ numericOp2 PDBool "!=" (/=))
+                                           ,("<", normalProcedure "<" $ numericOp2 PDBool "<" (<))
+                                           ,("<=", normalProcedure "<=" $ numericOp2 PDBool "<=" (<=))
+                                           ,(">", normalProcedure ">" $ numericOp2 PDBool ">" (>))
+                                           ,(">=", normalProcedure ">=" $ numericOp2 PDBool ">=" (>=))
+                                           ,("&&", normalProcedure "&&" $ booleanOp2 PDBool "&&" (&&))
+                                           ,("||", normalProcedure "||" $ booleanOp2 PDBool "||" (||))
+                                           ,("!", normalProcedure "!" $ booleanOp1 PDBool "!" not)
                                            ]
                       , state = Run
                       }
@@ -132,7 +140,12 @@ data PContainer = PData PData
                 | PProc ByteString PProc
 
 lookupWord :: ByteString -> Env PProc
-lookupWord x =  maybe (throwError "undefined word") return . Map.lookup x . wordMap =<< get
+lookupWord x = do
+  env <- get
+  case Map.lookup x $ wordMap env of
+    Just (ExecutionWord _ x) -> return x
+    Just (_) -> throwError $ "Can't execute: " ++ unpack x
+    Nothing -> throwError $ "undefined word: " ++ unpack x
 
 fromToken :: PToken -> Env PContainer
 fromToken (PNumber x) = return . PData $ PDNumber x
