@@ -4,19 +4,23 @@
 module Pudding (
   conduitPuddingParser,
   conduitPuddingEvaluator,
+  evalEnvT,
+  initEnv,
   ) where
 
 import Control.Applicative (Applicative, (<$>), pure)
-import Control.Monad.Error (MonadError, ErrorT, catchError, throwError)
-import Control.Monad.State (MonadState, StateT, get, put, runState, modify)
-import Control.Monad.Trans (MonadIO)
-import Control.Monad.Writer (MonadWriter, WriterT, tell)
+import Control.Monad (liftM)
+import Control.Monad.Error (MonadError, ErrorT, catchError, throwError, runErrorT)
+import Control.Monad.State (MonadState, StateT, get, put, execStateT, runStateT, modify)
+import Control.Monad.Trans (MonadTrans, MonadIO, lift, liftIO)
+import Control.Monad.Writer (MonadWriter, WriterT, execWriterT, tell)
 import Data.ByteString.Char8 as BC (ByteString, pack, unpack, append, concat)
-import Data.Conduit as C (Conduit)
-import qualified Data.Conduit.List as CL (mapM)
+import Data.Conduit as C (Conduit, await, yield, transPipe)
+import qualified Data.Conduit.List as CL (mapM, concatMapAccum)
 import Data.Map as Map (Map, fromList, lookup)
 import Prelude hiding (div)
 import Pudding.Parse
+import System.IO
 
 
 data PData = PDNumber Double
@@ -29,16 +33,26 @@ data PState = Run
 
 data Environment = Environment
                    { stack :: [PData]
-                   , wordMap :: Monad m => Map ByteString (PProc m)
+                   , wordMap :: MonadIO m => Map ByteString (PProc m)
                    , state :: PState
                    }
 
-newtype EnvT m a = EnvT { runEnvT :: WriterT ByteString (ErrorT String (StateT Environment m)) a }
-                 deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadError String, MonadWriter ByteString)
+newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT Environment m) a }
+                 deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadError String)
 
-type PProc m = EnvT m [ByteString]
+instance MonadTrans EnvT where
+  lift = undefined
 
--- basic environment operators
+type PProc m = EnvT m ()
+
+-- environment operators
+
+-- |
+-- 初期環境をとってEnvTを実行し、新しい環境を得る
+evalEnvT :: Monad m => Environment -> EnvT m () -> m (Either String (), Environment)
+evalEnvT init program = flip runStateT init . runErrorT . runEnvT $ program
+
+-- basic environment monad operators
 
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
@@ -62,26 +76,25 @@ pop = do
 setState :: Monad m => PState -> EnvT m ()
 setState s = modify $ \e -> e { state = s }
 
-ok :: Monad m => ByteString -> EnvT m ()
-ok msg = tell $ BC.concat ["> ", msg, "\n"]
+ok :: MonadIO m => ByteString -> EnvT m ()
+ok msg = liftIO . putStrLn $ "> " ++ unpack msg
 
-ng :: Monad m => ByteString -> EnvT m ()
-ng msg = tell $ BC.concat ["*** ", msg, "\n"]
+ng :: MonadIO m => ByteString -> EnvT m ()
+ng msg = liftIO . hPutStrLn stderr $ "*** " ++ unpack msg
 
 -- pudding procedure
 
-showTop :: Monad m => PProc m
-showTop = pop >>= return . pure . pack . show
+showTop :: MonadIO m => PProc m
+showTop = pop >>= ok . pack . show
 
-showStack :: Monad m => PProc m
-showStack = get >>= return . pure . pack . show . stack
+showStack :: MonadIO m => PProc m
+showStack = get >>= ok . pack . show . stack
 
 numericOp2 :: Monad m => (a -> PData) -> String -> (Double -> Double -> a) -> PProc m
 numericOp2 ctor name op = transaction (const msg) $ do
   PDNumber a <- pop
   PDNumber b <- pop
   push . ctor $ op b a
-  return []
   where
     msg = name ++ " needs 2 Numbers"
 
@@ -90,7 +103,6 @@ booleanOp2 ctor name op = transaction (const msg) $ do
   PDBool a <- pop
   PDBool b <- pop
   push . ctor $ op b a
-  return []
   where
     msg = name ++ " nees 2 Booleans"
 
@@ -98,7 +110,6 @@ booleanOp1 :: Monad m => (a -> PData) -> String -> (Bool -> a) -> PProc m
 booleanOp1 ctor name op = transaction (const msg) $ do
   PDBool a <- pop
   push . ctor $ op a
-  return []
   where
     msg = name ++ " nees 1 Boolean"
 
@@ -107,7 +118,6 @@ dup = do
   x <- pop
   push x
   push x
-  return []
 
 initEnv :: Environment
 initEnv = Environment { stack = []
@@ -135,28 +145,35 @@ initEnv = Environment { stack = []
 data PContainer m = PData PData
                   | PProc ByteString (PProc m)
 
-lookupWord :: Monad m => ByteString -> EnvT m (PProc m)
+lookupWord :: MonadIO m => ByteString -> EnvT m (PProc m)
 lookupWord x =  maybe (throwError $ "undefined word: " ++ unpack x) return . Map.lookup x . wordMap =<< get
 
-fromToken :: Monad m => PToken -> EnvT m (PContainer m)
+fromToken :: MonadIO m => PToken -> EnvT m (PContainer m)
 fromToken (PNumber x) = return . PData $ PDNumber x
 fromToken (PBool x) = return . PData $ PDBool x
 fromToken (PString x) = return . PData $ PDString x
-fromToken (PWord x) = lookupWord x >>= return . PProc x
+fromToken (PWord x) = liftM (PProc x) (lookupWord x)
 
 -- |
 -- >>> :m +Data.Conduit Data.Conduit.List
 -- >>> runResourceT $ sourceList [PNumber 1.0,PNumber 2.0,PNumber 3.0, PWord $ pack ".s", PWord $ pack "+", PWord $ pack "+", PWord $ pack "."] $= conduitPuddingEvaluator $$ consume
 -- ["> [PDNumber 3.0,PDNumber 2.0,PDNumber 1.0]\n","> PDNumber 6.0\n"]
-conduitPuddingEvaluator :: (Monad m, Functor m) => Conduit PToken m ByteString
+conduitPuddingEvaluator :: Monad m => Conduit PToken (EnvT m) ()
 conduitPuddingEvaluator = undefined
 
-conduitPuddingEvaluator' :: (Monad m, Functor m) => Conduit PToken (EnvT m) ByteString
-conduitPuddingEvaluator' = CL.mapM $ \t -> (fromToken t >>= eval) `catchError` handler
-   where
-    eval :: (Monad m, Functor m) => PContainer m -> EnvT m ByteString
-    eval (PData x) = push x >> return ""
-    eval (PProc _ p) = BC.concat <$> map ((append "> ") . (`append` "\n")) <$> p
+compile :: Conduit PToken (EnvT m) ()
+compile = undefined -- がんばって書けばいいはず
 
-    handler :: (Monad m) => String -> EnvT m ByteString
-    handler e = return $ pack ("*** " ++ e)  where
+execute :: MonadIO m => Conduit PToken (EnvT m) ()
+execute = await >>= maybe (return ()) step
+  where
+    step t = do
+      lift $ (fromToken t >>= eval) `catchError` handler
+      execute -- わざと再帰的に書いている。あとでcompileを呼ぶため。
+
+    eval :: Monad m => PContainer m -> EnvT m ()
+    eval (PData x) = push x
+    eval (PProc _ p) = p
+
+    handler :: MonadIO m => String -> EnvT m ()
+    handler = ng . pack
