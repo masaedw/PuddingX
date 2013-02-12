@@ -131,6 +131,7 @@ initEnv = Environment { stack = []
                                            ,("&&", normalProcedure "&&" $ booleanOp2 PDBool "&&" (&&))
                                            ,("||", normalProcedure "||" $ booleanOp2 PDBool "||" (||))
                                            ,("!", normalProcedure "!" $ booleanOp1 PDBool "!" not)
+                                           ,("_test", UserDefinedWord "_test" [PNumber 3, PNumber 3, PWord "*", PWord "."])
                                            ]
                       , state = Run
                       }
@@ -144,6 +145,7 @@ lookupWord x = do
   env <- get
   case Map.lookup x $ wordMap env of
     Just (ExecutionWord _ x) -> return x
+    Just (UserDefinedWord _ x) -> return $ concat <$> mapM eval x
     Just (_) -> throwError $ "Can't execute: " ++ unpack x
     Nothing -> throwError $ "undefined word: " ++ unpack x
 
