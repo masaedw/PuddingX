@@ -158,7 +158,7 @@ eval t = fromToken t >>= eval'
   where
     eval' :: PContainer -> Env [ByteString]
     eval' (PData x) = push x >> return []
-    eval' (PProc _ p) = map (append "> ") <$> p
+    eval' (PProc _ p) = p
 
 
 -- |
@@ -172,4 +172,4 @@ conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\
     step t e = swap $ runState s e
       where
         s :: State Environment [ByteString]
-        s = either (pure . pack . ("*** "++)) id <$> (runErrorT . runEnvT) (eval t)
+        s = either (pure . pack . ("*** "++)) id <$> (runErrorT . runEnvT) (map (append "> ") <$> eval t)
