@@ -28,3 +28,4 @@ executable PuddingX
                      , mtl
                      , resourcet
                      , transformers
+                     , vector

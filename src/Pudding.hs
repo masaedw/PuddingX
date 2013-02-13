@@ -9,12 +9,14 @@ import Control.Applicative (Applicative, (<$>), pure)
 import Control.Monad.Error (MonadError, ErrorT, runErrorT, catchError, throwError)
 import Control.Monad.State (MonadState, StateT, State, get, put, runState, modify)
 import Control.Monad.Trans (MonadIO)
+import Control.Monad (liftM)
 import Data.ByteString.Char8 as BC (ByteString, pack, append, unpack)
 import Data.Conduit as C (Conduit, (=$=))
 import qualified Data.Conduit.List as CL (map, concatMapAccum)
 import Data.Functor.Identity (Identity)
 import Data.Map as Map (Map, fromList, lookup)
 import Data.Tuple (swap)
+import Data.Vector as V (Vector, (!?), fromList)
 import Prelude hiding (div)
 import Pudding.Parse
 
@@ -28,17 +30,25 @@ data PState = Run
             | Compile ByteString [PToken]
             | NewWord
 
+type TokenBlock = Vector PToken
+
 data Meaning = NormalWord ByteString PProc -- 今はまだxtのみ。あとからct追加予定
              | CompileOnlyWord ByteString PProc -- ctのみ
              | ImmediateWord ByteString PProc -- xtのみ。";"がこれになるらしい
-             | UserDefinedWord ByteString [PToken] -- 今はまだxtのみ。あとから定義できるワードの種類を増やす予定
+             | UserDefinedWord ByteString TokenBlock -- 今はまだxtのみ。あとから定義できるワードの種類を増やす予定
+
+data CallBlock = CallBlock
+                 { pcStashed :: Int
+                 , word :: ByteString
+                 , tokenBlock :: TokenBlock
+                 }
 
 data Environment = Environment
                    { stack :: [PData]
                    , wordMap :: Map ByteString Meaning
                    , state :: PState
                    , pc :: Int
-                   , callStack :: [Meaning]
+                   , callStack :: [CallBlock]
                    }
 
 newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT Environment m) a }
@@ -74,6 +84,32 @@ setState s = modify $ \e -> e { state = s }
 
 normalProcedure :: ByteString -> PProc -> Meaning
 normalProcedure = NormalWord
+
+pushCallStack :: ByteString -> TokenBlock -> Env ()
+pushCallStack n tb = do
+  env <- get
+  put env { callStack = makeCallBlock env : callStack env,
+            pc = 0 }
+    where
+      makeCallBlock :: Environment -> CallBlock
+      makeCallBlock env = CallBlock (pc env) n tb
+
+popCallStack :: Env ()
+popCallStack = do
+  env <- get
+  put env { callStack = tail $ callStack env,
+            pc = pcStashed . head $ callStack env }
+
+setPc :: Int -> Env ()
+setPc i = do
+  env <- get
+  put env { pc = i }
+
+incPc :: Env ()
+incPc = getPc >>= \i -> setPc $ succ i
+
+getPc :: Env Int
+getPc = liftM pc get
 
 -- pudding procedure
 
@@ -118,24 +154,24 @@ dup = do
 
 initEnv :: Environment
 initEnv = Environment { stack = []
-                      , wordMap = fromList [(".", normalProcedure "." showTop)
-                                           ,(".s", normalProcedure ".s" showStack)
-                                           ,("dup", normalProcedure "dup" dup)
-                                           ,("+", normalProcedure "+" $ numericOp2 PDNumber "+" (+))
-                                           ,("-", normalProcedure "-" $ numericOp2 PDNumber "-" (-))
-                                           ,("*", normalProcedure "*" $ numericOp2 PDNumber "*" (*))
-                                           ,("/", normalProcedure "/" $ numericOp2 PDNumber "/" (/))
-                                           ,("==", normalProcedure "==" $ numericOp2 PDBool "==" (==))
-                                           ,("!=", normalProcedure "!=" $ numericOp2 PDBool "!=" (/=))
-                                           ,("<", normalProcedure "<" $ numericOp2 PDBool "<" (<))
-                                           ,("<=", normalProcedure "<=" $ numericOp2 PDBool "<=" (<=))
-                                           ,(">", normalProcedure ">" $ numericOp2 PDBool ">" (>))
-                                           ,(">=", normalProcedure ">=" $ numericOp2 PDBool ">=" (>=))
-                                           ,("&&", normalProcedure "&&" $ booleanOp2 PDBool "&&" (&&))
-                                           ,("||", normalProcedure "||" $ booleanOp2 PDBool "||" (||))
-                                           ,("!", normalProcedure "!" $ booleanOp1 PDBool "!" not)
-                                           ,("_test", UserDefinedWord "_test" [PNumber 3, PNumber 3, PWord "*", PWord "."])
-                                           ]
+                      , wordMap = Map.fromList [(".", normalProcedure "." showTop)
+                                               ,(".s", normalProcedure ".s" showStack)
+                                               ,("dup", normalProcedure "dup" dup)
+                                               ,("+", normalProcedure "+" $ numericOp2 PDNumber "+" (+))
+                                               ,("-", normalProcedure "-" $ numericOp2 PDNumber "-" (-))
+                                               ,("*", normalProcedure "*" $ numericOp2 PDNumber "*" (*))
+                                               ,("/", normalProcedure "/" $ numericOp2 PDNumber "/" (/))
+                                               ,("==", normalProcedure "==" $ numericOp2 PDBool "==" (==))
+                                               ,("!=", normalProcedure "!=" $ numericOp2 PDBool "!=" (/=))
+                                               ,("<", normalProcedure "<" $ numericOp2 PDBool "<" (<))
+                                               ,("<=", normalProcedure "<=" $ numericOp2 PDBool "<=" (<=))
+                                               ,(">", normalProcedure ">" $ numericOp2 PDBool ">" (>))
+                                               ,(">=", normalProcedure ">=" $ numericOp2 PDBool ">=" (>=))
+                                               ,("&&", normalProcedure "&&" $ booleanOp2 PDBool "&&" (&&))
+                                               ,("||", normalProcedure "||" $ booleanOp2 PDBool "||" (||))
+                                               ,("!", normalProcedure "!" $ booleanOp1 PDBool "!" not)
+                                               ,("_test", UserDefinedWord "_test" $ V.fromList [PNumber 3, PNumber 3, PWord "*", PWord "."])
+                                               ]
                       , state = Run
                       , pc = 0
                       , callStack = []
@@ -151,9 +187,26 @@ lookupXt x = do
   case Map.lookup x $ wordMap env of
     Just (NormalWord _ p) -> return p
     Just (ImmediateWord _ p) -> return p
-    Just (UserDefinedWord _ p) -> return $ concat <$> mapM eval p
+    Just (UserDefinedWord name x') -> return $ evalXt name x'
     Just _ -> throwError $ "Can't execute: " ++ unpack x
     Nothing -> throwError $ "undefined word: " ++ unpack x
+
+evalXt :: ByteString -> TokenBlock -> PProc
+evalXt name xt = pushCallStack name xt >> eval' xt
+  where
+    eval' :: TokenBlock -> PProc
+    eval' tb = do
+      c <- getPc
+      maybe f s $ tb !? c
+      where
+        s :: PToken -> PProc
+        s t = do
+          result <- eval t
+          incPc
+          liftM (++result) $ eval' tb
+
+        f :: PProc
+        f = popCallStack >> return []
 
 fromToken :: PToken -> Env PContainer
 fromToken (PNumber x) = return . PData $ PDNumber x
