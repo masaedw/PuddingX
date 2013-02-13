@@ -28,9 +28,10 @@ data PState = Run
             | Compile ByteString [PToken]
             | NewWord
 
-data Meaning = ExecutionWord ByteString PProc
-             | UserDefinedWord ByteString [PToken]
-             | CompilingWord ByteString PProc
+data Meaning = NormalWord ByteString PProc -- 今はまだxtのみ。あとからct追加予定
+             | CompileOnlyWord ByteString PProc -- ctのみ
+             | ImmediateWord ByteString PProc -- xtのみ。";"がこれになるらしい
+             | UserDefinedWord ByteString [PToken] -- 今はまだxtのみ。あとから定義できるワードの種類を増やす予定
 
 data Environment = Environment
                    { stack :: [PData]
@@ -72,7 +73,7 @@ setState :: PState -> Env ()
 setState s = modify $ \e -> e { state = s }
 
 normalProcedure :: ByteString -> PProc -> Meaning
-normalProcedure = ExecutionWord
+normalProcedure = NormalWord
 
 -- pudding procedure
 
@@ -148,9 +149,10 @@ lookupWord :: ByteString -> Env PProc
 lookupWord x = do
   env <- get
   case Map.lookup x $ wordMap env of
-    Just (ExecutionWord _ x) -> return x
-    Just (UserDefinedWord _ x) -> return $ concat <$> mapM eval x
-    Just (_) -> throwError $ "Can't execute: " ++ unpack x
+    Just (NormalWord _ p) -> return p
+    Just (ImmediateWord _ p) -> return p
+    Just (UserDefinedWord _ p) -> return $ concat <$> mapM eval p
+    Just _ -> throwError $ "Can't execute: " ++ unpack x
     Nothing -> throwError $ "undefined word: " ++ unpack x
 
 fromToken :: PToken -> Env PContainer
