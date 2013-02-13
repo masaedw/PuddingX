@@ -33,7 +33,7 @@ data PState = Run
 type TokenBlock = Vector PToken
 
 data Meaning = NormalWord ByteString PProc -- 今はまだxtのみ。あとからct追加予定
-             | CompileOnlyWord ByteString PProc -- ctのみ
+             | CompileOnlyWord ByteString PProc -- 今はまだxtのみ。あとからct追加予定
              | ImmediateWord ByteString PProc -- xtのみ。";"がこれになるらしい
              | UserDefinedWord ByteString TokenBlock -- 今はまだxtのみ。あとから定義できるワードの種類を増やす予定
 
@@ -111,6 +111,11 @@ incPc = getPc >>= \i -> setPc $ succ i
 getPc :: Env Int
 getPc = liftM pc get
 
+inTopLevel :: Env Bool
+inTopLevel = do
+  env <- get
+  return . null $ callStack env
+
 -- pudding procedure
 
 showTop :: PProc
@@ -118,6 +123,9 @@ showTop = pure . pack . show <$> pop
 
 showStack :: PProc
 showStack = pure . pack . show . stack <$> get
+
+showCallStack :: PProc
+showCallStack = pure . pack . show . map word . callStack <$> get
 
 numericOp2 :: (a -> PData) -> String -> (Double -> Double -> a) -> PProc
 numericOp2 ctor name op = transaction (const msg) $ do
@@ -152,10 +160,19 @@ dup = do
   push x
   return []
 
+jump :: PProc
+jump = do
+  PDNumber a <- pop
+  PDBool cond <- pop
+  if cond
+    then getPc >>= (\i -> setPc $ i + floor a) >> return []
+    else return []
+
 initEnv :: Environment
 initEnv = Environment { stack = []
                       , wordMap = Map.fromList [(".", normalProcedure "." showTop)
                                                ,(".s", normalProcedure ".s" showStack)
+                                               ,(".cs", normalProcedure ".cs" showCallStack)
                                                ,("dup", normalProcedure "dup" dup)
                                                ,("+", normalProcedure "+" $ numericOp2 PDNumber "+" (+))
                                                ,("-", normalProcedure "-" $ numericOp2 PDNumber "-" (-))
@@ -170,7 +187,10 @@ initEnv = Environment { stack = []
                                                ,("&&", normalProcedure "&&" $ booleanOp2 PDBool "&&" (&&))
                                                ,("||", normalProcedure "||" $ booleanOp2 PDBool "||" (||))
                                                ,("!", normalProcedure "!" $ booleanOp1 PDBool "!" not)
-                                               ,("_test", UserDefinedWord "_test" $ V.fromList [PNumber 3, PNumber 3, PWord "*", PWord "."])
+                                               ,("jump", CompileOnlyWord "jump" jump)
+                                               ,("_test", UserDefinedWord "_test" $ V.fromList [PWord ".cs", PNumber 3, PNumber 3, PWord "*", PWord "."])
+                                               ,("_testJump1", UserDefinedWord "_testJump1" $ V.fromList [PWord ".cs", PBool True, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
+                                               ,("_testJump2", UserDefinedWord "_testJump2" $ V.fromList [PWord ".cs", PBool False, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
                                                ]
                       , state = Run
                       , pc = 0
@@ -188,7 +208,12 @@ lookupXt x = do
     Just (NormalWord _ p) -> return p
     Just (ImmediateWord _ p) -> return p
     Just (UserDefinedWord name x') -> return $ evalXt name x'
-    Just _ -> throwError $ "Can't execute: " ++ unpack x
+    Just (CompileOnlyWord _ p) ->
+      do
+        top <- inTopLevel
+        if top
+          then throwError $ "Can't execute: " ++ unpack x
+          else return p
     Nothing -> throwError $ "undefined word: " ++ unpack x
 
 evalXt :: ByteString -> TokenBlock -> PProc
@@ -203,7 +228,7 @@ evalXt name xt = pushCallStack name xt >> eval' xt
         s t = do
           result <- eval t
           incPc
-          liftM (++result) $ eval' tb
+          liftM (result++) $ eval' tb
 
         f :: PProc
         f = popCallStack >> return []
