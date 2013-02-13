@@ -98,7 +98,7 @@ booleanOp2 ctor name op = transaction (const msg) $ do
   push . ctor $ op b a
   return []
   where
-    msg = name ++ " nees 2 Booleans"
+    msg = name ++ " needs 2 Booleans"
 
 booleanOp1 :: (a -> PData) -> String -> (Bool -> a) -> PProc
 booleanOp1 ctor name op = transaction (const msg) $ do
@@ -106,7 +106,7 @@ booleanOp1 ctor name op = transaction (const msg) $ do
   push . ctor $ op a
   return []
   where
-    msg = name ++ " nees 1 Boolean"
+    msg = name ++ " needs 1 Boolean"
 
 dup :: PProc
 dup = do
