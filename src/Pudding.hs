@@ -145,8 +145,8 @@ initEnv = Environment { stack = []
 data PContainer = PData PData
                 | PProc ByteString PProc
 
-lookupWord :: ByteString -> Env PProc
-lookupWord x = do
+lookupXt :: ByteString -> Env PProc
+lookupXt x = do
   env <- get
   case Map.lookup x $ wordMap env of
     Just (NormalWord _ p) -> return p
@@ -159,7 +159,7 @@ fromToken :: PToken -> Env PContainer
 fromToken (PNumber x) = return . PData $ PDNumber x
 fromToken (PBool x) = return . PData $ PDBool x
 fromToken (PString x) = return . PData $ PDString x
-fromToken (PWord x) = PProc x <$> lookupWord x
+fromToken (PWord x) = PProc x <$> lookupXt x
 
 eval :: PToken -> Env [ByteString]
 eval t = fromToken t >>= eval'
