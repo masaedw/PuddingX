@@ -29,11 +29,14 @@ data PValue = PVNumber Double
 data PState = Run
             | Compile ByteString [PToken]
             | NewWord
+            deriving (Show)
 
 type TokenBlock = Vector PToken
 
-data Meaning = NormalWord ByteString PProc -- 今はまだxtのみ。あとからct追加予定
-             | CompileOnlyWord ByteString PProc -- 今はまだxtのみ。あとからct追加予定
+type CompileProc = PToken -> [PToken] -> [PToken]
+
+data Meaning = NormalWord ByteString PProc CompileProc
+             | CompileOnlyWord ByteString PProc CompileProc
              | ImmediateWord ByteString PProc -- xtのみ。";"がこれになるらしい
              | UserDefinedWord ByteString TokenBlock -- 今はまだxtのみ。あとから定義できるワードの種類を増やす予定
 
@@ -86,7 +89,7 @@ getState :: Env PState
 getState = liftM state get
 
 nativeProcedure :: ByteString -> PProc -> Meaning
-nativeProcedure = NormalWord
+nativeProcedure name p = NormalWord name p (:)
 
 pushCallStack :: ByteString -> TokenBlock -> Env ()
 pushCallStack n tb = do
@@ -211,7 +214,7 @@ initEnv = Environment { stack = []
                                                ,("nop", nativeProcedure "nop" nop)
                                                ,(":", nativeProcedure ":" startCompile)
                                                ,(";", ImmediateWord ";" endCompile)
-                                               ,("jump", CompileOnlyWord "jump" jump)
+                                               ,("jump", CompileOnlyWord "jump" jump (:))
                                                ,("_test", UserDefinedWord "_test" $ V.fromList [PWord ".cs", PNumber 3, PNumber 3, PWord "*", PWord "."])
                                                ,("_testJump1", UserDefinedWord "_testJump1" $ V.fromList [PWord ".cs", PBool True, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
                                                ,("_testJump2", UserDefinedWord "_testJump2" $ V.fromList [PWord ".cs", PBool False, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
@@ -229,10 +232,10 @@ lookupXt :: ByteString -> Env PProc
 lookupXt x = do
   env <- get
   case Map.lookup x $ wordMap env of
-    Just (NormalWord _ p) -> return p
+    Just (NormalWord _ p _) -> return p
     Just (ImmediateWord _ p) -> return p
     Just (UserDefinedWord name x') -> return $ evalXt name x'
-    Just (CompileOnlyWord _ p) ->
+    Just (CompileOnlyWord _ p _) ->
       do
         top <- inTopLevel
         if top
@@ -263,13 +266,52 @@ fromToken (PBool x) = return . PValue $ PVBool x
 fromToken (PString x) = return . PValue $ PVString x
 fromToken (PWord x) = PProc x <$> lookupXt x
 
-eval :: PToken -> Env [ByteString]
-eval t = fromToken t >>= eval'
+run :: PToken -> Env [ByteString]
+run t = fromToken t >>= eval'
   where
     eval' :: PContainer -> Env [ByteString]
     eval' (PValue x) = push x >> return []
     eval' (PProc _ p) = p
 
+lookupCt :: ByteString -> Env (Either PProc CompileProc)
+lookupCt x = do
+  env <- get
+  case Map.lookup x $ wordMap env of
+    Just (NormalWord _ _ f) -> return $ Right f
+    Just (ImmediateWord _ p) -> return $ Left p
+    Just (UserDefinedWord _ _) -> return $ Right (:) -- ユーザ定義ワードのコンパイル時意味は「実行時にこのワードを実行」のみ。forthと違い、実行時に解決される。(ワードを再定義した場合既存のワードの動作が変更される)
+    Just (CompileOnlyWord _ _ f) -> return $ Right f
+    Nothing -> throwError $ "undefined word: " ++ unpack x
+
+pushToken :: PToken -> Env ()
+pushToken t = do
+  Compile name ts <- getState
+  setState . Compile name $ t : ts
+
+updateTokens :: ([PToken] -> [PToken]) -> Env ()
+updateTokens f = do
+  Compile name ts <- getState
+  setState . Compile name $ f ts
+
+compile :: PToken -> Env [ByteString]
+compile t@(PWord w) = do
+  x <- lookupCt w
+  case x of
+    Left p -> p
+    Right cp -> updateTokens (cp t) >> return []
+compile t = pushToken t >> return []
+
+newWord :: PToken -> Env [ByteString]
+newWord (PWord name) = setState (Compile name []) >> return []
+newWord _ = throwError "specify a new word"
+
+eval :: PToken -> Env [ByteString]
+eval t = do
+  s <- getState
+  case s of
+    Run -> run t
+    NewWord -> newWord t
+    Compile _ _ -> compile t
 
 -- |
 -- >>> :m +Data.Conduit Data.Conduit.List
