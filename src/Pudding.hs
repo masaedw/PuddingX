@@ -21,10 +21,10 @@ import Prelude hiding (div)
 import Pudding.Parse
 
 
-data PData = PDNumber Double
-           | PDBool Bool
-           | PDString ByteString
-           deriving (Eq, Show)
+data PValue = PVNumber Double
+            | PVBool Bool
+            | PVString ByteString
+            deriving (Eq, Show)
 
 data PState = Run
             | Compile ByteString [PToken]
@@ -44,7 +44,7 @@ data CallBlock = CallBlock
                  }
 
 data Environment = Environment
-                   { stack :: [PData]
+                   { stack :: [PValue]
                    , wordMap :: Map ByteString Meaning
                    , state :: PState
                    , pc :: Int
@@ -67,12 +67,12 @@ transaction msg m = do
   origEnv <- get
   catchError m $ (put origEnv >>) . throwError . msg
 
-push :: PData -> Env ()
+push :: PValue -> Env ()
 push d = do
   env@Environment { stack = s } <- get
   put env { stack = d:s }
 
-pop :: Env PData
+pop :: Env PValue
 pop = do
   env@Environment { stack = s } <- get
   case s of
@@ -135,27 +135,27 @@ showStack = pure . pack . show . stack <$> get
 showCallStack :: PProc
 showCallStack = pure . pack . show . map word . callStack <$> get
 
-numericOp2 :: (a -> PData) -> String -> (Double -> Double -> a) -> PProc
+numericOp2 :: (a -> PValue) -> String -> (Double -> Double -> a) -> PProc
 numericOp2 ctor name op = transaction (const msg) $ do
-  PDNumber a <- pop
-  PDNumber b <- pop
+  PVNumber a <- pop
+  PVNumber b <- pop
   push . ctor $ op b a
   return []
   where
     msg = name ++ " needs 2 Numbers"
 
-booleanOp2 :: (a -> PData) -> String -> (Bool -> Bool -> a) -> PProc
+booleanOp2 :: (a -> PValue) -> String -> (Bool -> Bool -> a) -> PProc
 booleanOp2 ctor name op = transaction (const msg) $ do
-  PDBool a <- pop
-  PDBool b <- pop
+  PVBool a <- pop
+  PVBool b <- pop
   push . ctor $ op b a
   return []
   where
     msg = name ++ " needs 2 Booleans"
 
-booleanOp1 :: (a -> PData) -> String -> (Bool -> a) -> PProc
+booleanOp1 :: (a -> PValue) -> String -> (Bool -> a) -> PProc
 booleanOp1 ctor name op = transaction (const msg) $ do
-  PDBool a <- pop
+  PVBool a <- pop
   push . ctor $ op a
   return []
   where
@@ -170,8 +170,8 @@ dup = do
 
 jump :: PProc
 jump = do
-  PDNumber a <- pop
-  PDBool cond <- pop
+  PVNumber a <- pop
+  PVBool cond <- pop
   if cond
     then getPc >>= (\i -> setPc $ i + floor a) >> return []
     else return []
@@ -195,19 +195,19 @@ initEnv = Environment { stack = []
                                                ,(".s", nativeProcedure ".s" showStack)
                                                ,(".cs", nativeProcedure ".cs" showCallStack)
                                                ,("dup", nativeProcedure "dup" dup)
-                                               ,("+", nativeProcedure "+" $ numericOp2 PDNumber "+" (+))
-                                               ,("-", nativeProcedure "-" $ numericOp2 PDNumber "-" (-))
-                                               ,("*", nativeProcedure "*" $ numericOp2 PDNumber "*" (*))
-                                               ,("/", nativeProcedure "/" $ numericOp2 PDNumber "/" (/))
-                                               ,("==", nativeProcedure "==" $ numericOp2 PDBool "==" (==))
-                                               ,("!=", nativeProcedure "!=" $ numericOp2 PDBool "!=" (/=))
-                                               ,("<", nativeProcedure "<" $ numericOp2 PDBool "<" (<))
-                                               ,("<=", nativeProcedure "<=" $ numericOp2 PDBool "<=" (<=))
-                                               ,(">", nativeProcedure ">" $ numericOp2 PDBool ">" (>))
-                                               ,(">=", nativeProcedure ">=" $ numericOp2 PDBool ">=" (>=))
-                                               ,("&&", nativeProcedure "&&" $ booleanOp2 PDBool "&&" (&&))
-                                               ,("||", nativeProcedure "||" $ booleanOp2 PDBool "||" (||))
-                                               ,("!", nativeProcedure "!" $ booleanOp1 PDBool "!" not)
+                                               ,("+", nativeProcedure "+" $ numericOp2 PVNumber "+" (+))
+                                               ,("-", nativeProcedure "-" $ numericOp2 PVNumber "-" (-))
+                                               ,("*", nativeProcedure "*" $ numericOp2 PVNumber "*" (*))
+                                               ,("/", nativeProcedure "/" $ numericOp2 PVNumber "/" (/))
+                                               ,("==", nativeProcedure "==" $ numericOp2 PVBool "==" (==))
+                                               ,("!=", nativeProcedure "!=" $ numericOp2 PVBool "!=" (/=))
+                                               ,("<", nativeProcedure "<" $ numericOp2 PVBool "<" (<))
+                                               ,("<=", nativeProcedure "<=" $ numericOp2 PVBool "<=" (<=))
+                                               ,(">", nativeProcedure ">" $ numericOp2 PVBool ">" (>))
+                                               ,(">=", nativeProcedure ">=" $ numericOp2 PVBool ">=" (>=))
+                                               ,("&&", nativeProcedure "&&" $ booleanOp2 PVBool "&&" (&&))
+                                               ,("||", nativeProcedure "||" $ booleanOp2 PVBool "||" (||))
+                                               ,("!", nativeProcedure "!" $ booleanOp1 PVBool "!" not)
                                                ,("nop", nativeProcedure "nop" nop)
                                                ,(":", nativeProcedure ":" startCompile)
                                                ,(";", ImmediateWord ";" endCompile)
@@ -222,7 +222,7 @@ initEnv = Environment { stack = []
                       }
 
 
-data PContainer = PData PData
+data PContainer = PValue PValue
                 | PProc ByteString PProc
 
 lookupXt :: ByteString -> Env PProc
@@ -258,23 +258,23 @@ evalXt name xt = pushCallStack name xt >> eval' xt
         f = popCallStack >> return []
 
 fromToken :: PToken -> Env PContainer
-fromToken (PNumber x) = return . PData $ PDNumber x
-fromToken (PBool x) = return . PData $ PDBool x
-fromToken (PString x) = return . PData $ PDString x
+fromToken (PNumber x) = return . PValue $ PVNumber x
+fromToken (PBool x) = return . PValue $ PVBool x
+fromToken (PString x) = return . PValue $ PVString x
 fromToken (PWord x) = PProc x <$> lookupXt x
 
 eval :: PToken -> Env [ByteString]
 eval t = fromToken t >>= eval'
   where
     eval' :: PContainer -> Env [ByteString]
-    eval' (PData x) = push x >> return []
+    eval' (PValue x) = push x >> return []
     eval' (PProc _ p) = p
 
 
 -- |
 -- >>> :m +Data.Conduit Data.Conduit.List
 -- >>> runResourceT $ sourceList [PNumber 1.0,PNumber 2.0,PNumber 3.0, PWord $ pack ".s", PWord $ pack "+", PWord $ pack "+", PWord $ pack "."] $= conduitPuddingEvaluator $$ consume
--- ["> [PDNumber 3.0,PDNumber 2.0,PDNumber 1.0]\n","> PDNumber 6.0\n"]
+-- ["> [PVNumber 3.0,PVNumber 2.0,PVNumber 1.0]\n","> PVNumber 6.0\n"]
 conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
 conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\n")
   where
