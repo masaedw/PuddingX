@@ -15,8 +15,8 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 source-repository head
-  type:              git
-  location:          git://github.com/masaedw/PuddingX.git
+  type:                git
+  location:            git://github.com/masaedw/PuddingX.git
 
 executable PuddingX
   Default-Language:    Haskell2010
