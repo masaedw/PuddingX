@@ -12,9 +12,10 @@ maintainer:          masa.edw _at_ gmail.com
 -- copyright:           
 category:            Language
 build-type:          Simple
-cabal-version:       >=1.8
+cabal-version:       >=1.10
 
 executable PuddingX
+  Default-Language:    Haskell2010
   main-is:             Main.hs
   hs-source-dirs:      src
   other-modules:       Pudding
@@ -29,3 +30,12 @@ executable PuddingX
                      , resourcet
                      , transformers
                      , vector
+
+Test-Suite doctest
+  Type:                exitcode-stdio-1.0
+  Default-Language:    Haskell2010
+  HS-Source-Dirs:      test
+  Ghc-Options:         -threaded -Wall
+  Main-Is:             doctests.hs
+  Build-Depends:       base
+                     , doctest >= 0.9.3
