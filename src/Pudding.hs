@@ -22,6 +22,8 @@ import Prelude hiding (div)
 import Pudding.Parse
 
 -- $setup
+-- >>> import Data.Conduit
+-- >>> import Data.Conduit.List
 -- >>> :set -XOverloadedStrings
 
 
@@ -356,9 +358,8 @@ eval t = do
     Compile _ _ -> compile t
 
 -- |
--- >>> :m +Data.Conduit Data.Conduit.List
 -- >>> runResourceT $ sourceList [PNumber 1.0,PNumber 2.0,PNumber 3.0, PWord $ pack ".s", PWord $ pack "+", PWord $ pack "+", PWord $ pack "."] $= conduitPuddingEvaluator $$ consume
--- ["> [PVNumber 3.0,PVNumber 2.0,PVNumber 1.0]\n","> PVNumber 6.0\n"]
+-- ["> [3.0, 2.0, 1.0]\n","> 6.0\n"]
 conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
 conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\n")
   where
