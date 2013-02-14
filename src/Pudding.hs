@@ -14,7 +14,7 @@ import Data.ByteString.Char8 as BC (ByteString, pack, append, unpack)
 import Data.Conduit as C (Conduit, (=$=))
 import qualified Data.Conduit.List as CL (map, concatMapAccum)
 import Data.Functor.Identity (Identity)
-import Data.Map as Map (Map, fromList, lookup)
+import Data.Map as Map (Map, fromList, lookup, insert)
 import Data.Tuple (swap)
 import Data.Vector as V (Vector, (!?), fromList)
 import Prelude hiding (div)
@@ -82,6 +82,9 @@ pop = do
 setState :: PState -> Env ()
 setState s = modify $ \e -> e { state = s }
 
+getState :: Env PState
+getState = liftM state get
+
 nativeProcedure :: ByteString -> PProc -> Meaning
 nativeProcedure = NormalWord
 
@@ -115,6 +118,11 @@ inTopLevel :: Env Bool
 inTopLevel = do
   env <- get
   return . null $ callStack env
+
+insertWord :: ByteString -> Meaning -> Env ()
+insertWord name meaning = do
+  env <- get
+  put $ env { wordMap = Map.insert name meaning $ wordMap env }
 
 -- pudding procedure
 
@@ -171,6 +179,16 @@ jump = do
 nop :: PProc
 nop = return []
 
+startCompile :: PProc
+startCompile = setState NewWord >> return []
+
+endCompile :: PProc
+endCompile = do
+  Compile name tokens <- getState
+  setState Run
+  insertWord name . UserDefinedWord name . V.fromList $ reverse tokens
+  return []
+
 initEnv :: Environment
 initEnv = Environment { stack = []
                       , wordMap = Map.fromList [(".", nativeProcedure "." showTop)
@@ -191,6 +209,8 @@ initEnv = Environment { stack = []
                                                ,("||", nativeProcedure "||" $ booleanOp2 PDBool "||" (||))
                                                ,("!", nativeProcedure "!" $ booleanOp1 PDBool "!" not)
                                                ,("nop", nativeProcedure "nop" nop)
+                                               ,(":", nativeProcedure ":" startCompile)
+                                               ,(";", ImmediateWord ";" endCompile)
                                                ,("jump", CompileOnlyWord "jump" jump)
                                                ,("_test", UserDefinedWord "_test" $ V.fromList [PWord ".cs", PNumber 3, PNumber 3, PWord "*", PWord "."])
                                                ,("_testJump1", UserDefinedWord "_testJump1" $ V.fromList [PWord ".cs", PBool True, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
