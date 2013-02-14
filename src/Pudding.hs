@@ -33,7 +33,7 @@ data PState = Run
 
 type TokenBlock = Vector PToken
 
-type CompileProc = PToken -> [PToken] -> [PToken]
+type CompileProc = PToken -> [PToken] -> Either String [PToken]
 
 data Meaning = NormalWord ByteString PProc CompileProc
              | CompileOnlyWord ByteString PProc CompileProc
@@ -89,7 +89,7 @@ getState :: Env PState
 getState = liftM state get
 
 nativeProcedure :: ByteString -> PProc -> Meaning
-nativeProcedure name p = NormalWord name p (:)
+nativeProcedure name p = NormalWord name p cpush
 
 pushCallStack :: ByteString -> TokenBlock -> Env ()
 pushCallStack n tb = do
@@ -182,6 +182,9 @@ jump = do
 nop :: PProc
 nop = return []
 
+cpush :: CompileProc
+cpush a b = Right $ a : b
+
 startCompile :: PProc
 startCompile = setState NewWord >> return []
 
@@ -214,7 +217,7 @@ initEnv = Environment { stack = []
                                                ,("nop", nativeProcedure "nop" nop)
                                                ,(":", nativeProcedure ":" startCompile)
                                                ,(";", ImmediateWord ";" endCompile)
-                                               ,("jump", CompileOnlyWord "jump" jump (:))
+                                               ,("jump", CompileOnlyWord "jump" jump cpush)
                                                ,("_test", UserDefinedWord "_test" $ V.fromList [PWord ".cs", PNumber 3, PNumber 3, PWord "*", PWord "."])
                                                ,("_testJump1", UserDefinedWord "_testJump1" $ V.fromList [PWord ".cs", PBool True, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
                                                ,("_testJump2", UserDefinedWord "_testJump2" $ V.fromList [PWord ".cs", PBool False, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
@@ -279,7 +282,7 @@ lookupCt x = do
   case Map.lookup x $ wordMap env of
     Just (NormalWord _ _ f) -> return $ Right f
     Just (ImmediateWord _ p) -> return $ Left p
-    Just (UserDefinedWord _ _) -> return $ Right (:) -- ユーザ定義ワードのコンパイル時意味は「実行時にこのワードを実行」のみ。forthと違い、実行時に解決される。(ワードを再定義した場合既存のワードの動作が変更される)
+    Just (UserDefinedWord _ _) -> return $ Right cpush -- ユーザ定義ワードのコンパイル時意味は「実行時にこのワードを実行」のみ。forthと違い、実行時に解決される。(ワードを再定義した場合既存のワードの動作が変更される)
     Just (CompileOnlyWord _ _ f) -> return $ Right f
     Nothing -> throwError $ "undefined word: " ++ unpack x
 
@@ -288,10 +291,10 @@ pushToken t = do
   Compile name ts <- getState
   setState . Compile name $ t : ts
 
-updateTokens :: ([PToken] -> [PToken]) -> Env ()
+updateTokens :: ([PToken] -> Either String [PToken]) -> Env ()
 updateTokens f = do
   Compile name ts <- getState
-  setState . Compile name $ f ts
+  either throwError (setState . Compile name) $ f ts
 
 compile :: PToken -> Env [ByteString]
 compile t@(PWord w) = do
