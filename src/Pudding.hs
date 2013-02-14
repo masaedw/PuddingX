@@ -82,8 +82,8 @@ pop = do
 setState :: PState -> Env ()
 setState s = modify $ \e -> e { state = s }
 
-normalProcedure :: ByteString -> PProc -> Meaning
-normalProcedure = NormalWord
+nativeProcedure :: ByteString -> PProc -> Meaning
+nativeProcedure = NormalWord
 
 pushCallStack :: ByteString -> TokenBlock -> Env ()
 pushCallStack n tb = do
@@ -170,23 +170,23 @@ jump = do
 
 initEnv :: Environment
 initEnv = Environment { stack = []
-                      , wordMap = Map.fromList [(".", normalProcedure "." showTop)
-                                               ,(".s", normalProcedure ".s" showStack)
-                                               ,(".cs", normalProcedure ".cs" showCallStack)
-                                               ,("dup", normalProcedure "dup" dup)
-                                               ,("+", normalProcedure "+" $ numericOp2 PDNumber "+" (+))
-                                               ,("-", normalProcedure "-" $ numericOp2 PDNumber "-" (-))
-                                               ,("*", normalProcedure "*" $ numericOp2 PDNumber "*" (*))
-                                               ,("/", normalProcedure "/" $ numericOp2 PDNumber "/" (/))
-                                               ,("==", normalProcedure "==" $ numericOp2 PDBool "==" (==))
-                                               ,("!=", normalProcedure "!=" $ numericOp2 PDBool "!=" (/=))
-                                               ,("<", normalProcedure "<" $ numericOp2 PDBool "<" (<))
-                                               ,("<=", normalProcedure "<=" $ numericOp2 PDBool "<=" (<=))
-                                               ,(">", normalProcedure ">" $ numericOp2 PDBool ">" (>))
-                                               ,(">=", normalProcedure ">=" $ numericOp2 PDBool ">=" (>=))
-                                               ,("&&", normalProcedure "&&" $ booleanOp2 PDBool "&&" (&&))
-                                               ,("||", normalProcedure "||" $ booleanOp2 PDBool "||" (||))
-                                               ,("!", normalProcedure "!" $ booleanOp1 PDBool "!" not)
+                      , wordMap = Map.fromList [(".", nativeProcedure "." showTop)
+                                               ,(".s", nativeProcedure ".s" showStack)
+                                               ,(".cs", nativeProcedure ".cs" showCallStack)
+                                               ,("dup", nativeProcedure "dup" dup)
+                                               ,("+", nativeProcedure "+" $ numericOp2 PDNumber "+" (+))
+                                               ,("-", nativeProcedure "-" $ numericOp2 PDNumber "-" (-))
+                                               ,("*", nativeProcedure "*" $ numericOp2 PDNumber "*" (*))
+                                               ,("/", nativeProcedure "/" $ numericOp2 PDNumber "/" (/))
+                                               ,("==", nativeProcedure "==" $ numericOp2 PDBool "==" (==))
+                                               ,("!=", nativeProcedure "!=" $ numericOp2 PDBool "!=" (/=))
+                                               ,("<", nativeProcedure "<" $ numericOp2 PDBool "<" (<))
+                                               ,("<=", nativeProcedure "<=" $ numericOp2 PDBool "<=" (<=))
+                                               ,(">", nativeProcedure ">" $ numericOp2 PDBool ">" (>))
+                                               ,(">=", nativeProcedure ">=" $ numericOp2 PDBool ">=" (>=))
+                                               ,("&&", nativeProcedure "&&" $ booleanOp2 PDBool "&&" (&&))
+                                               ,("||", nativeProcedure "||" $ booleanOp2 PDBool "||" (||))
+                                               ,("!", nativeProcedure "!" $ booleanOp1 PDBool "!" not)
                                                ,("jump", CompileOnlyWord "jump" jump)
                                                ,("_test", UserDefinedWord "_test" $ V.fromList [PWord ".cs", PNumber 3, PNumber 3, PWord "*", PWord "."])
                                                ,("_testJump1", UserDefinedWord "_testJump1" $ V.fromList [PWord ".cs", PBool True, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
