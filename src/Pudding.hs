@@ -20,6 +20,9 @@ import Data.Vector as V (Vector, (!?), fromList)
 import Prelude hiding (div)
 import Pudding.Parse
 
+-- $setup
+-- >>> :set -XOverloadedStrings
+
 
 data PValue = PVNumber Double
             | PVBool Bool
@@ -175,12 +178,35 @@ jump :: PProc
 jump = do
   PVNumber a <- pop
   PVBool cond <- pop
-  if cond
+  if not cond
     then getPc >>= (\i -> setPc $ i + floor a) >> return []
     else return []
 
+fjump :: PProc
+fjump = do
+  PVNumber a <- pop
+  getPc >>= (\i -> setPc $ i + floor a) >> return []
+
 nop :: PProc
 nop = return []
+
+-- |
+-- >>> cthen (PWord "then") [PNumber 1, PNumber 2, PWord "if", PBool True]
+-- Right [PNumber 1.0,PNumber 2.0,PWord "jump",PNumber 2.0,PBool True]
+-- >>> cthen (PWord "then") [PNumber 1, PWord "else", PNumber 2, PWord "if", PBool True]
+-- Right [PNumber 1.0,PWord "fjump",PNumber 1.0,PNumber 2.0,PWord "jump",PNumber 3.0,PBool True]
+-- >>> cthen (PWord "then") [PNumber 1, PNumber 1, PNumber 1, PWord "else", PNumber 2, PWord "if", PBool True]
+-- Right [PNumber 1.0,PNumber 1.0,PNumber 1.0,PWord "fjump",PNumber 3.0,PNumber 2.0,PWord "jump",PNumber 3.0,PBool True]
+-- >>> cthen (PWord "then") [PNumber 1, PWord "else", PNumber 2, PNumber 2, PNumber 2, PWord "if", PBool True]
+-- Right [PNumber 1.0,PWord "fjump",PNumber 1.0,PNumber 2.0,PNumber 2.0,PNumber 2.0,PWord "jump",PNumber 5.0,PBool True]
+cthen :: CompileProc
+cthen _ a =
+  case break (== PWord "if") a of
+    (_,[]) -> Left "then requires if"
+    (b,_:c) ->
+      case break (== PWord "else") b of
+        (_,[]) -> Right $ b ++ [PWord "jump", PNumber . fromIntegral $ length b] ++ c
+        (d,_:e) -> Right $ d ++ [PWord "fjump", PNumber . fromIntegral $ length d] ++ e ++ [PWord "jump", PNumber . fromIntegral $ length e + 2] ++ c
 
 cpush :: CompileProc
 cpush a b = Right $ a : b
@@ -218,6 +244,10 @@ initEnv = Environment { stack = []
                                                ,(":", nativeProcedure ":" startCompile)
                                                ,(";", ImmediateWord ";" endCompile)
                                                ,("jump", CompileOnlyWord "jump" jump cpush)
+                                               ,("fjump", CompileOnlyWord "fjump" fjump cpush)
+                                               ,("if", CompileOnlyWord "if" nop cpush)
+                                               ,("else", CompileOnlyWord "else" nop cpush)
+                                               ,("then", CompileOnlyWord "then" nop cthen)
                                                ,("_test", UserDefinedWord "_test" $ V.fromList [PWord ".cs", PNumber 3, PNumber 3, PWord "*", PWord "."])
                                                ,("_testJump1", UserDefinedWord "_testJump1" $ V.fromList [PWord ".cs", PBool True, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
                                                ,("_testJump2", UserDefinedWord "_testJump2" $ V.fromList [PWord ".cs", PBool False, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])

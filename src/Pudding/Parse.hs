@@ -23,6 +23,7 @@ data PToken = PWord ByteString
 -- >>> import Data.Conduit
 -- >>> import Data.Conduit.List
 -- >>> import Data.Attoparsec
+-- >>> :set -XOverloadedStrings
 
 -- | token parser
 --
