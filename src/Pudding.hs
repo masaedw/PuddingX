@@ -175,12 +175,15 @@ dup = do
   return []
 
 jump :: PProc
-jump = do
-  PVNumber a <- pop
-  PVBool cond <- pop
-  if not cond
-    then getPc >>= (\i -> setPc $ i + floor a) >> return []
-    else return []
+jump = jump' `catchError` (return $ throwError "stack top is not Boolean")
+  where
+    jump' :: PProc
+    jump' = do
+      PVNumber a <- pop
+      PVBool cond <- pop
+      if not cond
+        then getPc >>= (\i -> setPc $ i + floor a) >> return []
+        else return []
 
 fjump :: PProc
 fjump = do
