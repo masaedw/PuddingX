@@ -19,6 +19,11 @@ data PToken = PWord ByteString
             | PString ByteString
             deriving (Show, Eq)
 
+-- $setup
+-- >>> import Data.Conduit
+-- >>> import Data.Conduit.List
+-- >>> import Data.Attoparsec
+
 -- | token parser
 --
 -- >>> parseOnly pToken . pack $ "123.5"
@@ -77,7 +82,6 @@ pEscape = char '\\' *> (unEscape <$> AC.satisfy (`elem` "\"\\0abfnrt"))
     unEscape a = error $ "unknown character: " ++ [a]
 
 -- |
--- >>> :m +Data.Conduit Data.Conduit.List
 -- >>> runResourceT $ sourceList [pack "aaa 1", pack "2 3"] $= conduitPuddingParser $$ consume
 -- [PWord "aaa",PNumber 1.0,PNumber 2.0,PNumber 3.0]
 conduitPuddingParser :: Monad m => Conduit ByteString m PToken
