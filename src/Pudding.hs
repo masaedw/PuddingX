@@ -168,6 +168,9 @@ jump = do
     then getPc >>= (\i -> setPc $ i + floor a) >> return []
     else return []
 
+nop :: PProc
+nop = return []
+
 initEnv :: Environment
 initEnv = Environment { stack = []
                       , wordMap = Map.fromList [(".", nativeProcedure "." showTop)
@@ -187,6 +190,7 @@ initEnv = Environment { stack = []
                                                ,("&&", nativeProcedure "&&" $ booleanOp2 PDBool "&&" (&&))
                                                ,("||", nativeProcedure "||" $ booleanOp2 PDBool "||" (||))
                                                ,("!", nativeProcedure "!" $ booleanOp1 PDBool "!" not)
+                                               ,("nop", nativeProcedure "nop" nop)
                                                ,("jump", CompileOnlyWord "jump" jump)
                                                ,("_test", UserDefinedWord "_test" $ V.fromList [PWord ".cs", PNumber 3, PNumber 3, PWord "*", PWord "."])
                                                ,("_testJump1", UserDefinedWord "_testJump1" $ V.fromList [PWord ".cs", PBool True, PNumber 3, PWord "jump", PString "a", PString "b", PString "c", PString "d"])
