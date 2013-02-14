@@ -14,12 +14,16 @@ category:            Language
 build-type:          Simple
 cabal-version:       >=1.10
 
+source-repository head
+  type:              git
+  location:          git://github.com/masaedw/PuddingX.git
+
 executable PuddingX
   Default-Language:    Haskell2010
   main-is:             Main.hs
   hs-source-dirs:      src
   other-modules:       Pudding
-  ghc-options:         -O2 -Wall
+  ghc-options:         -Wall
   build-depends:       base ==4.5.*
                      , attoparsec >=0.10.3
                      , attoparsec-conduit
