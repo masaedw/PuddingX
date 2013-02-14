@@ -6,14 +6,15 @@ module Pudding (
   ) where
 
 import Control.Applicative (Applicative, (<$>), pure)
+import Control.Monad (liftM)
 import Control.Monad.Error (MonadError, ErrorT, runErrorT, catchError, throwError)
 import Control.Monad.State (MonadState, StateT, State, get, put, runState, modify)
 import Control.Monad.Trans (MonadIO)
-import Control.Monad (liftM)
 import Data.ByteString.Char8 as BC (ByteString, pack, append, unpack)
 import Data.Conduit as C (Conduit, (=$=))
 import qualified Data.Conduit.List as CL (map, concatMapAccum)
 import Data.Functor.Identity (Identity)
+import Data.List (intersperse)
 import Data.Map as Map (Map, fromList, lookup, insert)
 import Data.Tuple (swap)
 import Data.Vector as V (Vector, (!?), fromList)
@@ -28,6 +29,11 @@ data PValue = PVNumber Double
             | PVBool Bool
             | PVString ByteString
             deriving (Eq, Show)
+
+showPV :: PValue -> String
+showPV (PVNumber n) = show n
+showPV (PVBool b) = show b
+showPV (PVString s) = unpack s
 
 data PState = Run
             | Compile ByteString [PToken]
@@ -133,10 +139,10 @@ insertWord name meaning = do
 -- pudding procedure
 
 showTop :: PProc
-showTop = pure . pack . show <$> pop
+showTop = pure . pack . showPV <$> pop
 
 showStack :: PProc
-showStack = pure . pack . show . stack <$> get
+showStack = pure . pack . ('[':) . (++"]") . concat . intersperse ", " . map showPV . stack <$> get
 
 showCallStack :: PProc
 showCallStack = pure . pack . show . map word . callStack <$> get
