@@ -5,9 +5,10 @@ module Pudding.Parse (
   ) where
 
 import Control.Applicative ((<|>),(<$>), (*>), (<*))
-import Data.Attoparsec.ByteString (Parser, Result, IResult(..), choice, many')
+import Control.Monad (void)
+import Data.Attoparsec.ByteString (Parser, Result, IResult(..), choice, many', endOfInput)
 import qualified Data.Attoparsec.ByteString as A (takeWhile1)
-import Data.Attoparsec.Char8 as AC (char, string, double, feed, parse, isSpace_w8, skipSpace, sepBy, satisfy, notInClass)
+import Data.Attoparsec.Char8 as AC (char, string, double, feed, parse, isSpace_w8, isSpace, skipSpace, sepBy, satisfy, notInClass)
 import Data.ByteString.Char8 as BC (ByteString, pack, append)
 import Data.Conduit as C (Conduit)
 import qualified Data.Conduit.List as CL (concatMapAccum)
@@ -33,12 +34,18 @@ data PToken = PWord ByteString
 -- Right (PString "aabbcc")
 -- >>> parseOnly pToken "abc"
 -- Right (PWord "abc")
+-- >>> parseOnly pToken "2dup"
+-- Right (PWord "2dup")
 pToken :: Parser PToken
-pToken = PNumber <$> double
-         <|> PBool <$> choice [True <$ string "true"
-                              ,False <$ string "false"]
-         <|> PString <$> pString
-         <|> PWord <$> A.takeWhile1 (not . isSpace_w8)
+pToken = choice [PNumber <$> double <* spaceOrEnd
+                ,PBool <$> choice [True <$ string "true"
+                                  ,False <$ string "false"] <* spaceOrEnd
+                ,PString <$> pString <* spaceOrEnd
+                ,PWord <$> A.takeWhile1 (not . isSpace_w8) <* spaceOrEnd
+                ]
+
+spaceOrEnd :: Parser ()
+spaceOrEnd = (void $ satisfy isSpace) <|> endOfInput
 
 -- | string paresr
 --
