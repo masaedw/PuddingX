@@ -262,7 +262,7 @@ initEnv = Environment { stack = []
                                                ,(".cs", nativeProcedure ".cs" showCallStack)
                                                ,("drop", nativeProcedure "drop" pdrop)
                                                ,("dup", nativeProcedure "dup" dup)
-                                               ,("dup2", nativeProcedure "dup2" dup2)
+                                               ,("2dup", nativeProcedure "2dup" dup2)
                                                ,("+", nativeProcedure "+" $ numericOp2 PVNumber "+" (+))
                                                ,("-", nativeProcedure "-" $ numericOp2 PVNumber "-" (-))
                                                ,("*", nativeProcedure "*" $ numericOp2 PVNumber "*" (*))
