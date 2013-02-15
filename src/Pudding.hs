@@ -1,5 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module Pudding (
   conduitPuddingParser,
   conduitPuddingEvaluator,
