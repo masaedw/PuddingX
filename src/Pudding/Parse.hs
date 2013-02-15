@@ -27,11 +27,11 @@ data PToken = PWord ByteString
 
 -- | token parser
 --
--- >>> parseOnly pToken . pack $ "123.5"
+-- >>> parseOnly pToken "123.5"
 -- Right (PNumber 123.5)
--- >>> parseOnly pToken . pack $ "\"aabbcc\""
+-- >>> parseOnly pToken "\"aabbcc\""
 -- Right (PString "aabbcc")
--- >>> parseOnly pToken . pack $ "abc"
+-- >>> parseOnly pToken "abc"
 -- Right (PWord "abc")
 pToken :: Parser PToken
 pToken = PNumber <$> double
@@ -48,7 +48,7 @@ pToken = PNumber <$> double
 -- Right "abc"
 -- >>> parseOnly pString . pack $ show "'"
 -- Right "'"
--- >>> parseOnly pString . pack $ "\"\\\"\\\\\\0\\a\\b\\f\\n\\r\\t\""
+-- >>> parseOnly pString "\"\\\"\\\\\\0\\a\\b\\f\\n\\r\\t\""
 -- Right "\"\\\NUL\a\b\f\n\r\t"
 pString :: Parser ByteString
 pString = char '"' *> (pack <$> many' (pEscape <|> pChar)) <* char '"'
@@ -58,15 +58,15 @@ pChar = AC.satisfy $ AC.notInClass "\"\\"
 
 -- | espace char parser
 --
--- >>> parseOnly pEscape $ pack "\\\""
+-- >>> parseOnly pEscape "\\\""
 -- Right '"'
--- >>> parseOnly pEscape $ pack "\\\\"
+-- >>> parseOnly pEscape "\\\\"
 -- Right '\\'
--- >>> parseOnly pEscape $ pack "\\0"
+-- >>> parseOnly pEscape "\\0"
 -- Right '\NUL'
--- >>> parseOnly pEscape $ pack "\\a"
+-- >>> parseOnly pEscape "\\a"
 -- Right '\a'
--- >>> parseOnly pEscape $ pack "\\t"
+-- >>> parseOnly pEscape "\\t"
 -- Right '\t'
 pEscape :: Parser Char
 pEscape = char '\\' *> (unEscape <$> AC.satisfy (`elem` "\"\\0abfnrt"))
@@ -83,7 +83,7 @@ pEscape = char '\\' *> (unEscape <$> AC.satisfy (`elem` "\"\\0abfnrt"))
     unEscape a = error $ "unknown character: " ++ [a]
 
 -- |
--- >>> runResourceT $ sourceList [pack "aaa 1", pack "2 3"] $= conduitPuddingParser $$ consume
+-- >>> runResourceT $ sourceList ["aaa 1", "2 3"] $= conduitPuddingParser $$ consume
 -- [PWord "aaa",PNumber 1.0,PNumber 2.0,PNumber 3.0]
 conduitPuddingParser :: Monad m => Conduit ByteString m PToken
 conduitPuddingParser = CL.concatMapAccum step ""
