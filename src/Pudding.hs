@@ -1,5 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Rank2Types #-}
 module Pudding (
   conduitPuddingParser,
   conduitPuddingEvaluator,
@@ -46,10 +47,10 @@ type TokenBlock = Vector PToken
 
 type CompileProc = PToken -> [PToken] -> Either String [PToken]
 
-data Meaning = NormalWord ByteString PProc CompileProc
-             | CompileOnlyWord ByteString PProc CompileProc
-             | ImmediateWord ByteString PProc
-             | UserDefinedWord ByteString TokenBlock -- 今はまだxtのみ。あとから定義できるワードの種類を増やす予定
+data Meaning m = NormalWord ByteString (PProc m) CompileProc
+               | CompileOnlyWord ByteString (PProc m) CompileProc
+               | ImmediateWord ByteString (PProc m)
+               | UserDefinedWord ByteString TokenBlock -- 今はまだxtのみ。あとから定義できるワードの種類を増やす予定
 
 data CallBlock = CallBlock
                  { pcStashed :: Int
@@ -59,7 +60,7 @@ data CallBlock = CallBlock
 
 data Environment = Environment
                    { stack :: [PValue]
-                   , wordMap :: Map ByteString Meaning
+                   , wordMap :: Monad m => Map ByteString (Meaning m)
                    , state :: PState
                    , pc :: Int
                    , callStack :: [CallBlock]
@@ -68,9 +69,9 @@ data Environment = Environment
 newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT Environment m) a }
                  deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadError String)
 
-type Env = EnvT Identity
+--type Env = EnvT Identity
 
-type PProc = Env [ByteString]
+type PProc m = EnvT m [ByteString]
 
 -- basic environment operators
 
@@ -99,7 +100,7 @@ setState s = modify $ \e -> e { state = s }
 getState :: Monad m => EnvT m PState
 getState = liftM state get
 
-nativeProcedure :: ByteString -> PProc -> Meaning
+nativeProcedure :: Monad m => ByteString -> PProc m -> Meaning m
 nativeProcedure name p = NormalWord name p cpush
 
 pushCallStack :: Monad m => ByteString -> TokenBlock -> EnvT m ()
@@ -133,23 +134,23 @@ inTopLevel = do
   env <- get
   return . null $ callStack env
 
-insertWord :: Monad m => ByteString -> Meaning -> EnvT m ()
+insertWord :: Monad m => ByteString -> Meaning m -> EnvT m ()
 insertWord name meaning = do
   env <- get
   put $ env { wordMap = Map.insert name meaning $ wordMap env }
 
 -- pudding procedure
 
-showTop :: PProc
-showTop = pure . pack . showPV <$> pop
+showTop :: Monad m => PProc m
+showTop = liftM (pure . pack . showPV) pop
 
-showStack :: PProc
-showStack = pure . pack . ('[':) . (++"]") . intercalate ", " . map showPV . stack <$> get
+showStack :: Monad m => PProc m
+showStack = liftM (pure . pack . ('[':) . (++"]") . intercalate ", " . map showPV . stack) get
 
-showCallStack :: PProc
-showCallStack = pure . pack . show . map word . callStack <$> get
+showCallStack :: Monad m => PProc m
+showCallStack = liftM (pure . pack . show . map word . callStack) get
 
-numericOp2 :: (a -> PValue) -> String -> (Double -> Double -> a) -> PProc
+numericOp2 :: Monad m => (a -> PValue) -> String -> (Double -> Double -> a) -> PProc m
 numericOp2 ctor name op = transaction (const msg) $ do
   PVNumber a <- pop
   PVNumber b <- pop
@@ -158,7 +159,7 @@ numericOp2 ctor name op = transaction (const msg) $ do
   where
     msg = name ++ " needs 2 Numbers"
 
-booleanOp2 :: (a -> PValue) -> String -> (Bool -> Bool -> a) -> PProc
+booleanOp2 :: Monad m => (a -> PValue) -> String -> (Bool -> Bool -> a) -> PProc m
 booleanOp2 ctor name op = transaction (const msg) $ do
   PVBool a <- pop
   PVBool b <- pop
@@ -167,7 +168,7 @@ booleanOp2 ctor name op = transaction (const msg) $ do
   where
     msg = name ++ " needs 2 Booleans"
 
-booleanOp1 :: (a -> PValue) -> String -> (Bool -> a) -> PProc
+booleanOp1 :: Monad m => (a -> PValue) -> String -> (Bool -> a) -> PProc m
 booleanOp1 ctor name op = transaction (const msg) $ do
   PVBool a <- pop
   push . ctor $ op a
@@ -175,19 +176,19 @@ booleanOp1 ctor name op = transaction (const msg) $ do
   where
     msg = name ++ " needs 1 Boolean"
 
-pdrop :: PProc
+pdrop :: Monad m => PProc m
 pdrop = do
   _ <- pop
   return []
 
-dup :: PProc
+dup :: Monad m => PProc m
 dup = do
   x <- pop
   push x
   push x
   return []
 
-dup2 :: PProc
+dup2 :: Monad m => PProc m
 dup2 = do
   x <- pop
   y <- pop
@@ -197,10 +198,10 @@ dup2 = do
   push x
   return []
 
-jump :: PProc
+jump :: Monad m => PProc m
 jump = jump' `catchError` return (throwError "stack top is not Boolean")
   where
-    jump' :: PProc
+    jump' :: Monad m => PProc m
     jump' = do
       PVNumber a <- pop
       PVBool cond <- pop
@@ -208,15 +209,15 @@ jump = jump' `catchError` return (throwError "stack top is not Boolean")
         then getPc >>= (\i -> setPc $ i + floor a) >> return []
         else return []
 
-fjump :: PProc
+fjump :: Monad m => PProc m
 fjump = do
   PVNumber a <- pop
   getPc >>= (\i -> setPc $ i + floor a) >> return []
 
-nop :: PProc
+nop :: Monad m => PProc m
 nop = return []
 
-pswap :: PProc
+pswap :: Monad m => PProc m
 pswap = do
   a <- pop
   b <- pop
@@ -245,10 +246,10 @@ cthen _ a =
 cpush :: CompileProc
 cpush a b = Right $ a : b
 
-startCompile :: PProc
+startCompile :: Monad m => PProc m
 startCompile = setState NewWord >> return []
 
-endCompile :: PProc
+endCompile :: Monad m => PProc m
 endCompile = do
   Compile name tokens <- getState
   setState Run
@@ -296,10 +297,10 @@ initEnv = Environment { stack = []
                       }
 
 
-data PContainer = PValue PValue
-                | PProc ByteString PProc
+data PContainer m = PValue PValue
+                  | PProc ByteString (PProc m)
 
-lookupXt :: Monad m => ByteString -> EnvT m PProc
+lookupXt :: Monad m => ByteString -> EnvT m (PProc m)
 lookupXt x = do
   env <- get
   case Map.lookup x $ wordMap env of
@@ -314,37 +315,37 @@ lookupXt x = do
           else return p
     Nothing -> throwError $ "undefined word: " ++ unpack x
 
-evalXt :: ByteString -> TokenBlock -> PProc
+evalXt :: Monad m => ByteString -> TokenBlock -> PProc m
 evalXt name xt = pushCallStack name xt >> eval' xt
   where
-    eval' :: TokenBlock -> PProc
+    eval' :: Monad m => TokenBlock -> PProc m
     eval' tb = do
       c <- getPc
       maybe f s $ tb !? c
       where
-        s :: PToken -> PProc
+        s :: Monad m => PToken -> PProc m
         s t = do
           result <- eval t
           incPc
           liftM (result++) $ eval' tb
 
-        f :: PProc
+        f :: Monad m => PProc m
         f = popCallStack >> return []
 
-fromToken :: Monad m => PToken -> EnvT m PContainer
+fromToken :: Monad m => PToken -> EnvT m (PContainer m)
 fromToken (PNumber x) = return . PValue $ PVNumber x
 fromToken (PBool x) = return . PValue $ PVBool x
 fromToken (PString x) = return . PValue $ PVString x
 fromToken (PWord x) = liftM (PProc x) $ lookupXt x
 
-run :: PToken -> Env [ByteString]
+run :: Monad m => PToken -> EnvT m [ByteString]
 run t = fromToken t >>= eval'
   where
-    eval' :: PContainer -> Env [ByteString]
+    eval' :: Monad m => PContainer m -> EnvT m [ByteString]
     eval' (PValue x) = push x >> return []
     eval' (PProc _ p) = p
 
-lookupCt :: ByteString -> Env (Either PProc CompileProc)
+lookupCt :: Monad m => ByteString -> EnvT m (Either (PProc m) CompileProc)
 lookupCt x = do
   env <- get
   case Map.lookup x $ wordMap env of
@@ -354,17 +355,17 @@ lookupCt x = do
     Just (CompileOnlyWord _ _ f) -> return $ Right f
     Nothing -> throwError $ "undefined word: " ++ unpack x
 
-pushToken :: PToken -> Env ()
+pushToken :: Monad m => PToken -> EnvT m ()
 pushToken t = do
   Compile name ts <- getState
   setState . Compile name $ t : ts
 
-updateTokens :: ([PToken] -> Either String [PToken]) -> Env ()
+updateTokens :: Monad m => ([PToken] -> Either String [PToken]) -> EnvT m ()
 updateTokens f = do
   Compile name ts <- getState
   either throwError (setState . Compile name) $ f ts
 
-compile :: PToken -> Env [ByteString]
+compile :: Monad m => PToken -> EnvT m [ByteString]
 compile t@(PWord w) = do
   x <- lookupCt w
   case x of
@@ -372,11 +373,11 @@ compile t@(PWord w) = do
     Right cp -> updateTokens (cp t) >> return []
 compile t = pushToken t >> return []
 
-newWord :: PToken -> Env [ByteString]
+newWord :: Monad m => PToken -> EnvT m [ByteString]
 newWord (PWord name) = setState (Compile name []) >> return []
 newWord _ = throwError "specify a new word"
 
-eval :: PToken -> Env [ByteString]
+eval :: Monad m => PToken -> EnvT m [ByteString]
 eval t = do
   s <- getState
   case s of
