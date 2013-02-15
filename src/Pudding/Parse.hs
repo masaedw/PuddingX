@@ -45,7 +45,7 @@ pToken = choice [PNumber <$> double <* spaceOrEnd
                 ]
 
 spaceOrEnd :: Parser ()
-spaceOrEnd = (void $ satisfy isSpace) <|> endOfInput
+spaceOrEnd = void (satisfy isSpace) <|> endOfInput
 
 -- | string paresr
 --

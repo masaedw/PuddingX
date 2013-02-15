@@ -14,7 +14,7 @@ import Data.ByteString.Char8 as BC (ByteString, pack, append, unpack)
 import Data.Conduit as C (Conduit, (=$=))
 import qualified Data.Conduit.List as CL (map, concatMapAccum)
 import Data.Functor.Identity (Identity)
-import Data.List (intersperse)
+import Data.List (intercalate)
 import Data.Map as Map (Map, fromList, lookup, insert)
 import Data.Tuple (swap)
 import Data.Vector as V (Vector, (!?), fromList)
@@ -144,7 +144,7 @@ showTop :: PProc
 showTop = pure . pack . showPV <$> pop
 
 showStack :: PProc
-showStack = pure . pack . ('[':) . (++"]") . concat . intersperse ", " . map showPV . stack <$> get
+showStack = pure . pack . ('[':) . (++"]") . intercalate ", " . map showPV . stack <$> get
 
 showCallStack :: PProc
 showCallStack = pure . pack . show . map word . callStack <$> get
@@ -198,7 +198,7 @@ dup2 = do
   return []
 
 jump :: PProc
-jump = jump' `catchError` (return $ throwError "stack top is not Boolean")
+jump = jump' `catchError` return (throwError "stack top is not Boolean")
   where
     jump' :: PProc
     jump' = do
