@@ -76,33 +76,33 @@ type PProc = Env [ByteString]
 
 -- |
 -- 失敗だったら状態を戻して失敗を伝える、成功だったらそのまま
-transaction :: (String -> String) -> Env a -> Env a
+transaction :: Monad m => (String -> String) -> EnvT m a -> EnvT m a
 transaction msg m = do
   origEnv <- get
   catchError m $ (put origEnv >>) . throwError . msg
 
-push :: PValue -> Env ()
+push :: Monad m => PValue -> EnvT m ()
 push d = do
   env@Environment { stack = s } <- get
   put env { stack = d:s }
 
-pop :: Env PValue
+pop :: Monad m => EnvT m PValue
 pop = do
   env@Environment { stack = s } <- get
   case s of
     (a:as) -> put env { stack = as } >> return a
     _ -> throwError "empty stack"
 
-setState :: PState -> Env ()
+setState :: Monad m => PState -> EnvT m ()
 setState s = modify $ \e -> e { state = s }
 
-getState :: Env PState
+getState :: Monad m => EnvT m PState
 getState = liftM state get
 
 nativeProcedure :: ByteString -> PProc -> Meaning
 nativeProcedure name p = NormalWord name p cpush
 
-pushCallStack :: ByteString -> TokenBlock -> Env ()
+pushCallStack :: Monad m => ByteString -> TokenBlock -> EnvT m ()
 pushCallStack n tb = do
   env <- get
   put env { callStack = makeCallBlock env : callStack env,
@@ -111,29 +111,29 @@ pushCallStack n tb = do
       makeCallBlock :: Environment -> CallBlock
       makeCallBlock env = CallBlock (pc env) n tb
 
-popCallStack :: Env ()
+popCallStack :: Monad m => EnvT m ()
 popCallStack = do
   env <- get
   put env { callStack = tail $ callStack env,
             pc = pcStashed . head $ callStack env }
 
-setPc :: Int -> Env ()
+setPc :: Monad m => Int -> EnvT m ()
 setPc i = do
   env <- get
   put env { pc = i }
 
-incPc :: Env ()
+incPc :: Monad m => EnvT m ()
 incPc = getPc >>= \i -> setPc $ succ i
 
-getPc :: Env Int
+getPc :: Monad m => EnvT m Int
 getPc = liftM pc get
 
-inTopLevel :: Env Bool
+inTopLevel :: Monad m => EnvT m Bool
 inTopLevel = do
   env <- get
   return . null $ callStack env
 
-insertWord :: ByteString -> Meaning -> Env ()
+insertWord :: Monad m => ByteString -> Meaning -> EnvT m ()
 insertWord name meaning = do
   env <- get
   put $ env { wordMap = Map.insert name meaning $ wordMap env }
@@ -299,7 +299,7 @@ initEnv = Environment { stack = []
 data PContainer = PValue PValue
                 | PProc ByteString PProc
 
-lookupXt :: ByteString -> Env PProc
+lookupXt :: Monad m => ByteString -> EnvT m PProc
 lookupXt x = do
   env <- get
   case Map.lookup x $ wordMap env of
@@ -331,11 +331,11 @@ evalXt name xt = pushCallStack name xt >> eval' xt
         f :: PProc
         f = popCallStack >> return []
 
-fromToken :: PToken -> Env PContainer
+fromToken :: Monad m => PToken -> EnvT m PContainer
 fromToken (PNumber x) = return . PValue $ PVNumber x
 fromToken (PBool x) = return . PValue $ PVBool x
 fromToken (PString x) = return . PValue $ PVString x
-fromToken (PWord x) = PProc x <$> lookupXt x
+fromToken (PWord x) = liftM (PProc x) $ lookupXt x
 
 run :: PToken -> Env [ByteString]
 run t = fromToken t >>= eval'
