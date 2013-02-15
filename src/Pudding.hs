@@ -175,10 +175,25 @@ booleanOp1 ctor name op = transaction (const msg) $ do
   where
     msg = name ++ " needs 1 Boolean"
 
+pdrop :: PProc
+pdrop = do
+  _ <- pop
+  return []
+
 dup :: PProc
 dup = do
   x <- pop
   push x
+  push x
+  return []
+
+dup2 :: PProc
+dup2 = do
+  x <- pop
+  y <- pop
+  push y
+  push x
+  push y
   push x
   return []
 
@@ -200,6 +215,14 @@ fjump = do
 
 nop :: PProc
 nop = return []
+
+pswap :: PProc
+pswap = do
+  a <- pop
+  b <- pop
+  push b
+  push a
+  return []
 
 -- |
 -- >>> cthen (PWord "then") [PNumber 1, PNumber 2, PWord "if", PBool True]
@@ -237,7 +260,9 @@ initEnv = Environment { stack = []
                       , wordMap = Map.fromList [(".", nativeProcedure "." showTop)
                                                ,(".s", nativeProcedure ".s" showStack)
                                                ,(".cs", nativeProcedure ".cs" showCallStack)
+                                               ,("drop", nativeProcedure "drop" pdrop)
                                                ,("dup", nativeProcedure "dup" dup)
+                                               ,("dup2", nativeProcedure "dup2" dup2)
                                                ,("+", nativeProcedure "+" $ numericOp2 PVNumber "+" (+))
                                                ,("-", nativeProcedure "-" $ numericOp2 PVNumber "-" (-))
                                                ,("*", nativeProcedure "*" $ numericOp2 PVNumber "*" (*))
@@ -251,7 +276,9 @@ initEnv = Environment { stack = []
                                                ,("&&", nativeProcedure "&&" $ booleanOp2 PVBool "&&" (&&))
                                                ,("||", nativeProcedure "||" $ booleanOp2 PVBool "||" (||))
                                                ,("!", nativeProcedure "!" $ booleanOp1 PVBool "!" not)
+                                               ,("mod", nativeProcedure "mod" . numericOp2 PVNumber "mod" $ \a b -> fromIntegral (mod (floor a) (floor b) :: Integer))
                                                ,("nop", nativeProcedure "nop" nop)
+                                               ,("swap", nativeProcedure "swap" pswap)
                                                ,(":", nativeProcedure ":" startCompile)
                                                ,(";", ImmediateWord ";" endCompile)
                                                ,("jump", CompileOnlyWord "jump" jump cpush)
