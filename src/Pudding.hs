@@ -48,7 +48,7 @@ type CompileProc = PToken -> [PToken] -> Either String [PToken]
 
 data Meaning = NormalWord ByteString PProc CompileProc
              | CompileOnlyWord ByteString PProc CompileProc
-             | ImmediateWord ByteString PProc -- xtのみ。";"がこれになるらしい
+             | ImmediateWord ByteString PProc
              | UserDefinedWord ByteString TokenBlock -- 今はまだxtのみ。あとから定義できるワードの種類を増やす予定
 
 data CallBlock = CallBlock
