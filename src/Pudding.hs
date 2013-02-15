@@ -181,11 +181,36 @@ pdrop = do
   _ <- pop
   return []
 
+nip :: PProc
+nip = do
+  a <- pop
+  _ <- pop
+  push a
+  return []
+
 dup :: PProc
 dup = do
   x <- pop
   push x
   push x
+  return []
+
+over :: PProc
+over = do
+  w2 <- pop
+  w1 <- pop
+  push w1
+  push w2
+  push w1
+  return []
+
+tuck :: PProc
+tuck = do
+  w2 <- pop
+  w1 <- pop
+  push w2
+  push w1
+  push w2
   return []
 
 dup2 :: PProc
@@ -263,6 +288,9 @@ initEnv = Environment { stack = []
                                                ,(".cs", nativeProcedure ".cs" showCallStack)
                                                ,("drop", nativeProcedure "drop" pdrop)
                                                ,("dup", nativeProcedure "dup" dup)
+                                               ,("nip", nativeProcedure "nip" nip)
+                                               ,("over", nativeProcedure "over" over)
+                                               ,("tuck", nativeProcedure "tuck" tuck)
                                                ,("2dup", nativeProcedure "2dup" dup2)
                                                ,("+", nativeProcedure "+" $ numericOp2 PVNumber "+" (+))
                                                ,("-", nativeProcedure "-" $ numericOp2 PVNumber "-" (-))
