@@ -1,6 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE Rank2Types #-}
 module Pudding (
   conduitPuddingParser,
   conduitPuddingEvaluator,
@@ -9,12 +8,11 @@ module Pudding (
 import Control.Applicative (Applicative, (<$>), pure)
 import Control.Monad (liftM)
 import Control.Monad.Error (MonadError, ErrorT, runErrorT, catchError, throwError)
-import Control.Monad.State (MonadState, StateT, State, get, put, runState, modify)
+import Control.Monad.State (MonadState, StateT, get, put, runStateT, modify)
 import Control.Monad.Trans (MonadIO)
 import Data.ByteString.Char8 as BC (ByteString, pack, append, unpack)
 import Data.Conduit as C (Conduit, (=$=))
-import qualified Data.Conduit.List as CL (map, concatMapAccum)
-import Data.Functor.Identity (Identity)
+import qualified Data.Conduit.List as CL (map, concatMapAccumM)
 import Data.List (intercalate)
 import Data.Map as Map (Map, fromList, lookup, insert)
 import Data.Tuple (swap)
@@ -58,16 +56,16 @@ data CallBlock = CallBlock
                  , tokenBlock :: TokenBlock
                  }
 
-data Environment = Environment
-                   { stack :: [PValue]
-                   , wordMap :: Monad m => Map ByteString (Meaning m)
-                   , state :: PState
-                   , pc :: Int
-                   , callStack :: [CallBlock]
-                   }
+data Environment m = Environment
+                     { stack :: [PValue]
+                     , wordMap :: Map ByteString (Meaning m)
+                     , state :: PState
+                     , pc :: Int
+                     , callStack :: [CallBlock]
+                     }
 
-newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT Environment m) a }
-                 deriving (Functor, Applicative, Monad, MonadIO, MonadState Environment, MonadError String)
+newtype EnvT m a = EnvT { runEnvT :: ErrorT String (StateT (Environment m) m) a }
+                 deriving (Functor, Applicative, Monad, MonadIO, MonadState (Environment m), MonadError String)
 
 --type Env = EnvT Identity
 
@@ -109,7 +107,7 @@ pushCallStack n tb = do
   put env { callStack = makeCallBlock env : callStack env,
             pc = 0 }
     where
-      makeCallBlock :: Environment -> CallBlock
+      makeCallBlock :: Environment m -> CallBlock
       makeCallBlock env = CallBlock (pc env) n tb
 
 popCallStack :: Monad m => EnvT m ()
@@ -256,7 +254,7 @@ endCompile = do
   insertWord name . UserDefinedWord name . V.fromList $ reverse tokens
   return []
 
-initEnv :: Environment
+initEnv :: (Monad m) => Environment m
 initEnv = Environment { stack = []
                       , wordMap = Map.fromList [(".", nativeProcedure "." showTop)
                                                ,(".s", nativeProcedure ".s" showStack)
@@ -388,11 +386,11 @@ eval t = do
 -- |
 -- >>> runResourceT $ sourceList [PNumber 1.0,PNumber 2.0,PNumber 3.0, PWord $ pack ".s", PWord $ pack "+", PWord $ pack "+", PWord $ pack "."] $= conduitPuddingEvaluator $$ consume
 -- ["> [3.0, 2.0, 1.0]\n","> 6.0\n"]
-conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
-conduitPuddingEvaluator = CL.concatMapAccum step initEnv =$= CL.map (`append` "\n")
+conduitPuddingEvaluator :: (Applicative m, Monad m) => Conduit PToken m ByteString
+conduitPuddingEvaluator = CL.concatMapAccumM step initEnv =$= CL.map (`append` "\n")
   where
-    step :: PToken -> Environment -> (Environment, [ByteString])
-    step t e = swap $ runState s e
+    step :: (Applicative m, Monad m) => PToken -> Environment m -> m (Environment m, [ByteString])
+    step t e = swap <$> runStateT s e
       where
-        s :: State Environment [ByteString]
+        s :: (Applicative m, Monad m) => StateT (Environment m) m [ByteString]
         s = either (pure . pack . ("*** "++)) id <$> (runErrorT . runEnvT) (map (append "> ") <$> eval t)
