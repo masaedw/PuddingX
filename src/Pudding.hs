@@ -280,7 +280,7 @@ endCompile = do
   insertWord name . UserDefinedWord name . V.fromList $ reverse tokens
   return []
 
-initEnv :: (Monad m) => Environment m
+initEnv :: Monad m => Environment m
 initEnv = Environment { stack = []
                       , wordMap = Map.fromList [(".", nativeProcedure "." showTop)
                                                ,(".s", nativeProcedure ".s" showStack)
