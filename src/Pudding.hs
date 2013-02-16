@@ -409,13 +409,13 @@ eval t = do
 -- |
 -- >>> runResourceT $ sourceList [PNumber 1.0,PNumber 2.0,PNumber 3.0, PWord $ pack ".s", PWord $ pack "+", PWord $ pack "+", PWord $ pack "."] $= conduitPuddingEvaluator $$ consume
 -- ["> [3.0, 2.0, 1.0]\n","> 6.0\n"]
-conduitPuddingEvaluator :: (Applicative m, Monad m) => Conduit PToken m ByteString
+conduitPuddingEvaluator :: Monad m => Conduit PToken m ByteString
 conduitPuddingEvaluator = CL.concatMapAccumM step initEnv =$= CL.map (`append` "\n")
   where
-    step :: (Applicative m, Monad m) => PToken -> Environment m -> m (Environment m, [ByteString])
-    step t e = swap <$> runStateT s e
+    step :: Monad m => PToken -> Environment m -> m (Environment m, [ByteString])
+    step t e = return . swap =<< runStateT s e
       where
-        s :: (Applicative m, Monad m) => StateT (Environment m) m [ByteString]
+        s :: Monad m => StateT (Environment m) m [ByteString]
         s = execWriterT $ do
           Right result <- runErrorT . runEnvT $ eval t `catchError` (ng . pack)
-          pure result
+          return result
