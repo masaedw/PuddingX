@@ -28,16 +28,14 @@ showCallStack = ok . pack . show . map word . callStack =<< get
 
 numericOp2 :: Monad m => (a -> PValue) -> String -> (Double -> Double -> a) -> PProc m
 numericOp2 ctor name op = transaction (const msg) $ do
-  PVNumber a <- pop
-  PVNumber b <- pop
+  [PVNumber a, PVNumber b] <- replicateM 2 pop
   push . ctor $ op b a
   where
     msg = name ++ " needs 2 Numbers"
 
 booleanOp2 :: Monad m => (a -> PValue) -> String -> (Bool -> Bool -> a) -> PProc m
 booleanOp2 ctor name op = transaction (const msg) $ do
-  PVBool a <- pop
-  PVBool b <- pop
+  [PVBool a, PVBool b] <- replicateM 2 pop
   push . ctor $ op b a
   where
     msg = name ++ " needs 2 Booleans"
@@ -54,40 +52,28 @@ pdrop = pop >> return ()
 
 nip :: Monad m => PProc m
 nip = do
-  a <- pop
-  _ <- pop
+  [a, _] <- replicateM 2 pop
   push a
 
 dup :: Monad m => PProc m
 dup = do
   x <- pop
-  push x
-  push x
+  replicateM_ 2 $ push x
 
 over :: Monad m => PProc m
 over = do
-  w2 <- pop
-  w1 <- pop
-  push w1
-  push w2
-  push w1
+  [w2, w1] <- replicateM 2 pop
+  mapM_ push [w1, w2, w1]
 
 tuck :: Monad m => PProc m
 tuck = do
-  w2 <- pop
-  w1 <- pop
-  push w2
-  push w1
-  push w2
+  [w2, w1] <- replicateM 2 pop
+  mapM_ push [w2, w1, w2]
 
 dup2 :: Monad m => PProc m
 dup2 = do
-  x <- pop
-  y <- pop
-  push y
-  push x
-  push y
-  push x
+  [x, y] <- replicateM 2 pop
+  mapM_ push [y, x, y, x]
 
 jump :: Monad m => PProc m
 jump = jump' `catchError` return (throwError "stack top is not Boolean")
