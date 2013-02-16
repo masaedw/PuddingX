@@ -19,6 +19,10 @@ import Prelude hiding (div)
 import Pudding.Core
 import Pudding.Words
 
+-- $setup
+-- >>> import Data.Conduit
+-- >>> import Data.Conduit.List
+-- >>> :set -XOverloadedStrings
 
 initEnv :: Monad m => Environment m
 initEnv = Environment { stack = []
