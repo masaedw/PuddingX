@@ -28,14 +28,14 @@ showCallStack = ok . pack . show . map word . callStack =<< get
 
 numericOp2 :: Monad m => (a -> PValue) -> String -> (Double -> Double -> a) -> PProc m
 numericOp2 ctor name op = transaction (const msg) $ do
-  [PVNumber a, PVNumber b] <- replicateM 2 pop
+  [PVNumber a, PVNumber b] <- popN 2
   push . ctor $ op b a
   where
     msg = name ++ " needs 2 Numbers"
 
 booleanOp2 :: Monad m => (a -> PValue) -> String -> (Bool -> Bool -> a) -> PProc m
 booleanOp2 ctor name op = transaction (const msg) $ do
-  [PVBool a, PVBool b] <- replicateM 2 pop
+  [PVBool a, PVBool b] <- popN 2
   push . ctor $ op b a
   where
     msg = name ++ " needs 2 Booleans"
@@ -52,7 +52,7 @@ pdrop = pop >> return ()
 
 nip :: Monad m => PProc m
 nip = do
-  [a, _] <- replicateM 2 pop
+  [a, _] <- popN 2
   push a
 
 dup :: Monad m => PProc m
@@ -62,17 +62,17 @@ dup = do
 
 over :: Monad m => PProc m
 over = do
-  [w2, w1] <- replicateM 2 pop
+  [w2, w1] <- popN 2
   mapM_ push [w1, w2, w1]
 
 tuck :: Monad m => PProc m
 tuck = do
-  [w2, w1] <- replicateM 2 pop
+  [w2, w1] <- popN 2
   mapM_ push [w2, w1, w2]
 
 dup2 :: Monad m => PProc m
 dup2 = do
-  [x, y] <- replicateM 2 pop
+  [x, y] <- popN 2
   mapM_ push [y, x, y, x]
 
 jump :: Monad m => PProc m
