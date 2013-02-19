@@ -92,6 +92,9 @@ pop = do
     (a:as) -> put env { stack = as } >> return a
     _ -> throwError "empty stack"
 
+popN :: Monad m => Int -> EnvT m [PValue]
+popN = flip replicateM pop
+
 setState :: Monad m => PState -> EnvT m ()
 setState s = modify $ \e -> e { state = s }
 
