@@ -56,9 +56,7 @@ nip = do
   push a
 
 dup :: Monad m => PProc m
-dup = do
-  x <- pop
-  replicateM_ 2 $ push x
+dup = replicateM_ 2 . push =<< pop
 
 over :: Monad m => PProc m
 over = do
