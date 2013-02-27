@@ -73,6 +73,11 @@ dup2 = do
   [x, y] <- popN 2
   mapM_ push [y, x, y, x]
 
+pswap :: Monad m => PProc m
+pswap = do
+  [a, b] <- popN 2
+  mapM_ push [b, a]
+
 jump :: Monad m => PProc m
 jump = jump' `catchError` return (throwError "stack top is not Boolean")
   where
@@ -90,13 +95,6 @@ fjump = do
 
 nop :: Monad m => PProc m
 nop = return ()
-
-pswap :: Monad m => PProc m
-pswap = do
-  a <- pop
-  b <- pop
-  push b
-  push a
 
 -- |
 -- >>> cthen (PWord "then") [PNumber 1, PNumber 2, PWord "if", PBool True]
