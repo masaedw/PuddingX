@@ -151,12 +151,10 @@ lookupXt x = do
     Just (NormalWord _ p _) -> return p
     Just (ImmediateWord _ p) -> return p
     Just (UserDefinedWord name x') -> return $ evalXt name x'
-    Just (CompileOnlyWord _ p _) ->
-      do
-        top <- inTopLevel
-        if top
-          then throwError $ "Can't execute: " ++ unpack x
-          else return p
+    Just (CompileOnlyWord _ p _) -> do
+      top <- inTopLevel
+      when top . throwError $ "Can't execute: " ++ unpack x
+      return p
     Nothing -> throwError $ "undefined word: " ++ unpack x
 
 evalXt :: Monad m => ByteString -> TokenBlock -> PProc m
