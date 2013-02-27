@@ -122,13 +122,11 @@ popCallStack = do
   put env { callStack = tail $ callStack env,
             pc = pcStashed . head $ callStack env }
 
-setPc :: Monad m => Int -> EnvT m ()
-setPc i = do
-  env <- get
-  put env { pc = i }
+modifyPc :: Monad m => (Int -> Int) -> EnvT m ()
+modifyPc f = modify $ \env -> env { pc = f $ pc env }
 
 incPc :: Monad m => EnvT m ()
-incPc = getPc >>= \i -> setPc $ succ i
+incPc = modifyPc succ
 
 getPc :: Monad m => EnvT m Int
 getPc = liftM pc get

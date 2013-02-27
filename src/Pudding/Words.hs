@@ -85,13 +85,12 @@ jump = jump' `catchError` return (throwError "stack top is not Boolean")
     jump' = do
       PVNumber a <- pop
       PVBool cond <- pop
-      unless cond $
-        getPc >>= setPc . (+ floor a)
+      unless cond $ modifyPc (+ floor a)
 
 fjump :: Monad m => PProc m
 fjump = do
   PVNumber a <- pop
-  getPc >>= setPc . (+ floor a)
+  modifyPc (+ floor a)
 
 nop :: Monad m => PProc m
 nop = return ()
