@@ -122,13 +122,11 @@ popCallStack = do
   put env { callStack = tail $ callStack env,
             pc = pcStashed . head $ callStack env }
 
-setPc :: Monad m => Int -> EnvT m ()
-setPc i = do
-  env <- get
-  put env { pc = i }
+modifyPc :: Monad m => (Int -> Int) -> EnvT m ()
+modifyPc f = modify $ \env -> env { pc = f $ pc env }
 
 incPc :: Monad m => EnvT m ()
-incPc = getPc >>= \i -> setPc $ succ i
+incPc = modifyPc succ
 
 getPc :: Monad m => EnvT m Int
 getPc = liftM pc get
@@ -153,12 +151,10 @@ lookupXt x = do
     Just (NormalWord _ p _) -> return p
     Just (ImmediateWord _ p) -> return p
     Just (UserDefinedWord name x') -> return $ evalXt name x'
-    Just (CompileOnlyWord _ p _) ->
-      do
-        top <- inTopLevel
-        if top
-          then throwError $ "Can't execute: " ++ unpack x
-          else return p
+    Just (CompileOnlyWord _ p _) -> do
+      top <- inTopLevel
+      when top . throwError $ "Can't execute: " ++ unpack x
+      return p
     Nothing -> throwError $ "undefined word: " ++ unpack x
 
 evalXt :: Monad m => ByteString -> TokenBlock -> PProc m
